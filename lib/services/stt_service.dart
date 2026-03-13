@@ -1,8 +1,9 @@
-// lib/services/stt_service.dart
-
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ffi';
+import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
@@ -21,7 +22,28 @@ class SttService {
   String get fullTranscript => _fullTranscript;
 
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (Platform.isAndroid) {
+      const channel = MethodChannel('native_libs');
+      final dir = await channel.invokeMethod<String>('getNativeLibDir');
+      debugPrint('[STT] nativeLibDir: $dir');
+      final libPath = '$dir/libonnxruntime.so';
+      final process = DynamicLibrary.process();
+      final dlopenNative = process.lookup<NativeFunction<Pointer Function(Pointer<Utf8>, Int32)>>('dlopen');
+      final dlopen = dlopenNative.asFunction<Pointer Function(Pointer<Utf8>, int)>();
+      final pathPtr = libPath.toNativeUtf8();
+      try {
+        const rtldNow = 2;
+        const rtldGlobal = 0x100;
+        final handle = dlopen(pathPtr, rtldNow | rtldGlobal);
+        if (handle.address == 0) {
+          debugPrint('[STT] RTLD_GLOBAL dlopen FAILED');
+        } else {
+          debugPrint('[STT] RTLD_GLOBAL dlopen OK');
+        }
+      } finally {
+        malloc.free(pathPtr);
+      }
+    }
 
     sherpa.initBindings();
 
@@ -62,7 +84,6 @@ class SttService {
 
   void acceptWaveform(List<double> samples, int sampleRate) {
     if (!_isInitialized || _stream == null || _recognizer == null) return;
-
     _stream!.acceptWaveform(
       samples: Float32List.fromList(samples),
       sampleRate: sampleRate,
@@ -74,14 +95,11 @@ class SttService {
     while (_recognizer!.isReady(_stream!)) {
       _recognizer!.decode(_stream!);
     }
-
     final result = _recognizer!.getResult(_stream!);
     final text = result.text.trim();
-
     if (text.isNotEmpty) {
       _transcriptController.add(text);
     }
-
     if (_recognizer!.isEndpoint(_stream!)) {
       if (text.isNotEmpty) {
         _fullTranscript += '$text。\n';
@@ -92,9 +110,22 @@ class SttService {
 
   Future<void> _copyAsset(String assetPath, String targetPath) async {
     final file = File(targetPath);
-    if (await file.exists()) return;
-    final data = await rootBundle.load(assetPath);
-    await file.writeAsBytes(data.buffer.asUint8List());
+    if (await file.exists()) {
+      debugPrint('[STT] 已存在，跳過: $targetPath');
+      return;
+    }
+    debugPrint('[STT] 開始複製: $assetPath');
+    final byteData = await rootBundle.load(assetPath);
+    final bytes = byteData.buffer.asUint8List();
+    final sink = file.openWrite();
+    const chunkSize = 1024 * 1024;
+    for (int i = 0; i < bytes.length; i += chunkSize) {
+      final end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
+      sink.add(bytes.sublist(i, end));
+    }
+    await sink.flush();
+    await sink.close();
+    debugPrint('[STT] 完成複製: $assetPath (${(bytes.length / 1024 / 1024).toStringAsFixed(1)} MB)');
   }
 
   void dispose() {

@@ -32,6 +32,20 @@ class _RecordingScreenState extends State<RecordingScreen> {
   bool _isSaving = false;
   int _lastUpdatedAt = 0;
 
+  // ── 進度條 ──────────────────────────────────────────────
+  double _loadingProgress = 0.0;
+  String _loadingMessage = '準備中...';
+
+  void _setProgress(double progress, String message) {
+    if (mounted) {
+      setState(() {
+        _loadingProgress = progress;
+        _loadingMessage = message;
+      });
+    }
+  }
+  // ────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
@@ -41,7 +55,15 @@ class _RecordingScreenState extends State<RecordingScreen> {
   Future<void> _init() async {
     _sttService = SttService();
     _recordingService = RecordingService(sttService: _sttService);
+
+    _setProgress(0.1, '初始化服務...');
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    _setProgress(0.2, '複製語音模型到裝置...\n（首次啟動需要較長時間）');
     await _sttService.initialize();
+
+    _setProgress(0.85, '載入完成，啟動錄音...');
+    await Future.delayed(const Duration(milliseconds: 200));
 
     _transcriptSub = _sttService.transcriptStream.listen((text) {
       setState(() {
@@ -73,8 +95,13 @@ class _RecordingScreenState extends State<RecordingScreen> {
       setState(() => _durationSeconds = s);
     });
 
+    _setProgress(0.95, '啟動麥克風...');
     await _recordingService.start();
-    setState(() => _isInitializing = false);
+
+    _setProgress(1.0, '就緒！');
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    if (mounted) setState(() => _isInitializing = false);
   }
 
   Future<void> _updateKeyPoints() async {
@@ -128,15 +155,75 @@ class _RecordingScreenState extends State<RecordingScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isInitializing) {
-      return const Scaffold(
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('載入語音模型中...'),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 圖示
+                const Icon(Icons.mic, color: Color(0xFF60A5FA), size: 48),
+                const SizedBox(height: 24),
+                // 標題
+                const Text(
+                  'LectureVault',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                // 進度條
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: _loadingProgress,
+                    minHeight: 8,
+                    backgroundColor: const Color(0xFF1E293B),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF60A5FA)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 百分比
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _loadingMessage,
+                        style: const TextStyle(
+                          color: Color(0x99FFFFFF),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${(_loadingProgress * 100).toInt()}%',
+                      style: const TextStyle(
+                        color: Color(0xFF60A5FA),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // 提示
+                if (_loadingProgress < 0.85)
+                  const Text(
+                    '首次使用需複製模型（約200MB）\n請耐心等候',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0x50FFFFFF),
+                      fontSize: 12,
+                      height: 1.6,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       );
