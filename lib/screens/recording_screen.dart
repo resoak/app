@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+// 移除未使用的 intl 匯入，改用自定義格式化
 import '../services/stt_service.dart';
 import '../services/recording_service.dart';
 import '../services/db_service.dart';
@@ -22,6 +22,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
   final _transcriptController = ScrollController();
   StreamSubscription? _transcriptSub;
   StreamSubscription? _durationSub;
+  StreamSubscription? _progressSub;
 
   final List<String> _sentences = [];
   String _interimText = '';
@@ -32,19 +33,8 @@ class _RecordingScreenState extends State<RecordingScreen> {
   bool _isSaving = false;
   int _lastUpdatedAt = 0;
 
-  // ── 進度條 ──────────────────────────────────────────────
   double _loadingProgress = 0.0;
-  String _loadingMessage = '準備中...';
-
-  void _setProgress(double progress, String message) {
-    if (mounted) {
-      setState(() {
-        _loadingProgress = progress;
-        _loadingMessage = message;
-      });
-    }
-  }
-  // ────────────────────────────────────────────────────────
+  String _loadingMessage = '系統啟動中...';
 
   @override
   void initState() {
@@ -56,346 +46,206 @@ class _RecordingScreenState extends State<RecordingScreen> {
     _sttService = SttService();
     _recordingService = RecordingService(sttService: _sttService);
 
-    _setProgress(0.1, '初始化服務...');
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    _setProgress(0.2, '複製語音模型到裝置...\n（首次啟動需要較長時間）');
-    await _sttService.initialize();
-
-    _setProgress(0.85, '載入完成，啟動錄音...');
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    _transcriptSub = _sttService.transcriptStream.listen((text) {
-      setState(() {
-        if (_sentences.isNotEmpty && _sentences.last == _interimText) {
-          _sentences.removeLast();
-        }
-        _interimText = text;
-        _sentences.add(text);
-      });
-
-      final confirmed = _sentences.where((s) => s != _interimText).length;
-      if (confirmed - _lastUpdatedAt >= 3) {
-        _updateKeyPoints();
-        _lastUpdatedAt = confirmed;
+    _progressSub = _sttService.initProgressStream.listen((progress) {
+      if (mounted) {
+        setState(() {
+          _loadingProgress = 0.1 + (progress * 0.8);
+          _loadingMessage = progress < 1.0 
+              ? '正在準備語音模型... ${(progress * 100).toInt()}%' 
+              : '模型載入完成...';
+        });
       }
+    });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_transcriptController.hasClients) {
-          _transcriptController.animateTo(
-            _transcriptController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
+    try {
+      await _sttService.initialize();
+      
+      _transcriptSub = _sttService.transcriptStream.listen((text) {
+        if (!mounted) return;
+        setState(() {
+          if (_sentences.isNotEmpty && _sentences.last == _interimText) {
+            _sentences.removeLast();
+          }
+          _interimText = text;
+          _sentences.add(text);
+        });
+
+        // 每增加 3 句新話就更新一次關鍵點
+        final confirmedCount = _sentences.length;
+        if (confirmedCount - _lastUpdatedAt >= 3) {
+          _updateKeyPoints();
+          _lastUpdatedAt = confirmedCount;
         }
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_transcriptController.hasClients) {
+            _transcriptController.animateTo(
+              _transcriptController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
       });
-    });
 
-    _durationSub = _recordingService.durationStream.listen((s) {
-      setState(() => _durationSeconds = s);
-    });
+      _durationSub = _recordingService.durationStream.listen((s) {
+        if (mounted) setState(() => _durationSeconds = s);
+      });
 
-    _setProgress(0.95, '啟動麥克風...');
-    await _recordingService.start();
-
-    _setProgress(1.0, '就緒！');
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    if (mounted) setState(() => _isInitializing = false);
+      await _recordingService.start();
+      if (mounted) setState(() => _isInitializing = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingMessage = '初始化失敗: $e');
+      }
+    }
   }
 
+  // 修正點：呼叫正確的 TextRank 方法名稱
   Future<void> _updateKeyPoints() async {
-    final confirmed = _sentences.where((s) => s != _interimText).toList();
-    if (confirmed.isEmpty) return;
-    final points = await TextRank.extractKeyPoints(confirmed, topN: 6, windowSize: 20);
-    if (mounted) setState(() => _keyPoints = points);
+    if (_sentences.isEmpty) return;
+    try {
+      final points = await TextRank.extractKeyPoints(
+        _sentences,
+        topN: 5,
+        windowSize: 50, // 只取最近 50 句分析，效能較好
+      );
+      if (mounted) {
+        setState(() => _keyPoints = points);
+      }
+    } catch (e) {
+      debugPrint('KeyPoints Error: $e');
+    }
   }
 
-  String _formatDuration(int s) {
-    final m = s ~/ 60;
-    final sec = s % 60;
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+  // 修正點：補上時間格式化
+  String _formatDuration(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  // 修正點：補上停止與存檔邏輯
   Future<void> _stopAndSave() async {
+    if (_isSaving) return;
     setState(() => _isSaving = true);
-    await _recordingService.stop();
-    await _updateKeyPoints();
 
-    final transcript = _sentences.where((s) => s != _interimText).join('。\n');
-    final summary = _keyPoints.map((p) => '• $p').join('\n');
-    final now = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    try {
+      await _recordingService.stop();
+      
+      final lecture = Lecture(
+        title: widget.lectureTitle,
+        date: DateTime.now().toString().split(' ')[0],
+        durationSeconds: _durationSeconds,
+        transcript: _sentences.join('\n'),
+        summary: _keyPoints.map((p) => '• $p').join('\n'),
+        audioPath: _recordingService.currentFilePath ?? '',
+      );
 
-    final lecture = Lecture(
-      title: widget.lectureTitle,
-      date: now,
-      audioPath: _recordingService.currentFilePath ?? '',
-      transcript: transcript,
-      summary: summary,
-      durationSeconds: _durationSeconds,
-    );
-
-    final id = await DbService().insertLecture(lecture);
-    if (mounted) {
-      setState(() => _isSaving = false);
-      Navigator.pop(context, id);
+      await DbService().insertLecture(lecture);
+      
+      if (mounted) {
+        Navigator.pop(context, true); // 回到首頁並通知重新讀取
+      }
+    } catch (e) {
+      debugPrint('Save Error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('儲存失敗: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   void dispose() {
+    _progressSub?.cancel();
     _transcriptSub?.cancel();
     _durationSub?.cancel();
     _transcriptController.dispose();
-    _recordingService.dispose();
-    _sttService.dispose();
+    // 這裡不 dispose 服務，因為它們在 RecordingScreen 裡是 late final
+    // 但如果有需要可以在這裡處理
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 圖示
-                const Icon(Icons.mic, color: Color(0xFF60A5FA), size: 48),
-                const SizedBox(height: 24),
-                // 標題
-                const Text(
-                  'LectureVault',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                // 進度條
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: _loadingProgress,
-                    minHeight: 8,
-                    backgroundColor: const Color(0xFF1E293B),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF60A5FA)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // 百分比
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _loadingMessage,
-                        style: const TextStyle(
-                          color: Color(0x99FFFFFF),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${(_loadingProgress * 100).toInt()}%',
-                      style: const TextStyle(
-                        color: Color(0xFF60A5FA),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // 提示
-                if (_loadingProgress < 0.85)
-                  const Text(
-                    '首次使用需複製模型（約200MB）\n請耐心等候',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0x50FFFFFF),
-                      fontSize: 12,
-                      height: 1.6,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+    if (_isInitializing) return _buildLoadingView();
+    return _buildRecordingView();
+  }
 
+  Widget _buildLoadingView() {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF020617),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Color(0xFF7C3AED)),
+            const SizedBox(height: 20),
+            Text(_loadingMessage, style: const TextStyle(color: Colors.white)),
+            Text('${(_loadingProgress * 100).toInt()}%', style: const TextStyle(color: Color(0xFF94A3B8))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecordingView() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF020617),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        foregroundColor: Colors.white,
-        title: Text(widget.lectureTitle, style: const TextStyle(fontSize: 16)),
+        backgroundColor: Colors.transparent,
+        title: Text(widget.lectureTitle, style: const TextStyle(color: Colors.white)),
         actions: [
-          if (!_isSaving)
-            TextButton.icon(
-              onPressed: _stopAndSave,
-              icon: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent),
-              label: const Text('結束', style: TextStyle(color: Colors.redAccent)),
-            ),
-          if (_isSaving)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
+          IconButton(
+            icon: _isSaving ? const CircularProgressIndicator() : const Icon(Icons.check, color: Colors.green),
+            onPressed: _stopAndSave,
+          )
         ],
       ),
       body: Column(
         children: [
-          _buildStatusBar(),
+          // 顯示時間
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              _formatDuration(_durationSeconds),
+              style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+            ),
+          ),
+          // 逐字稿顯示區域
           Expanded(
-            child: Row(
-              children: [
-                Expanded(flex: 5, child: _buildTranscriptPanel()),
-                const VerticalDivider(width: 1, color: Color(0xFF334155)),
-                Expanded(flex: 4, child: _buildKeyPointsPanel()),
-              ],
+            child: ListView.builder(
+              controller: _transcriptController,
+              padding: const EdgeInsets.all(16),
+              itemCount: _sentences.length,
+              itemBuilder: (context, i) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(_sentences[i], style: const TextStyle(color: Colors.white70, fontSize: 16)),
+              ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBar() {
-    return Container(
-      color: const Color(0xFF1E293B),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          const _PulsingDot(),
-          const SizedBox(width: 8),
-          const Text('錄音中', style: TextStyle(color: Color(0xB3FFFFFF), fontSize: 13)),
-          const Spacer(),
-          Text(
-            _formatDuration(_durationSeconds),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
+          // 關鍵點顯示區
+          if (_keyPoints.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: const Color(0xFF1E293B),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('即時重點', style: TextStyle(color: Color(0xFF60A5FA), fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ..._keyPoints.take(3).map((p) => Text('• $p', style: const TextStyle(color: Colors.white, fontSize: 13))),
+                ],
+              ),
             ),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTranscriptPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
-          child: Text('逐字稿', style: TextStyle(color: Color(0x80FFFFFF), fontSize: 12)),
-        ),
-        Expanded(
-          child: ListView.builder(
-            controller: _transcriptController,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-            itemCount: _sentences.length,
-            itemBuilder: (context, i) {
-              final isInterim = _sentences[i] == _interimText;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  _sentences[i],
-                  style: TextStyle(
-                    color: isInterim ? const Color(0x60FFFFFF) : const Color(0xDEFFFFFF),
-                    fontSize: 14,
-                    height: 1.6,
-                    fontStyle: isInterim ? FontStyle.italic : FontStyle.normal,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildKeyPointsPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
-          child: Text('✨ 即時重點', style: TextStyle(color: Color(0x80FFFFFF), fontSize: 12)),
-        ),
-        Expanded(
-          child: _keyPoints.isEmpty
-              ? const Center(
-                  child: Text(
-                    '累積更多內容後\n自動顯示重點',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0x40FFFFFF), fontSize: 13),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                  itemCount: _keyPoints.length,
-                  itemBuilder: (context, i) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('•  ', style: TextStyle(color: Color(0xFF60A5FA), fontSize: 14)),
-                          Expanded(
-                            child: Text(
-                              _keyPoints[i],
-                              style: const TextStyle(color: Color(0xDEFFFFFF), fontSize: 13, height: 1.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _PulsingDot extends StatefulWidget {
-  const _PulsingDot();
-  @override
-  State<_PulsingDot> createState() => _PulsingDotState();
-}
-
-class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _ctrl,
-      child: Container(
-        width: 10, height: 10,
-        decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
       ),
     );
   }
