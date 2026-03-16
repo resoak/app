@@ -1,5 +1,3 @@
-// lib/models/lecture.dart
-
 class Lecture {
   final int? id;
   final String title;
@@ -8,6 +6,7 @@ class Lecture {
   final String transcript;
   final String summary;
   final int durationSeconds;
+  final String tag;
 
   Lecture({
     this.id,
@@ -17,41 +16,32 @@ class Lecture {
     this.transcript = '',
     this.summary = '',
     this.durationSeconds = 0,
+    this.tag = '一般',
   });
 
-  Map<String, dynamic> toMap() => {
-        'id': id,
-        'title': title,
-        'date': date,
-        'audioPath': audioPath,
-        'transcript': transcript,
-        'summary': summary,
-        'durationSeconds': durationSeconds,
-      };
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'date': date,
+      'audioPath': audioPath,
+      'transcript': transcript,
+      'summary': summary,
+      'durationSeconds': durationSeconds,
+      'tag': tag,
+    };
+  }
 
-  factory Lecture.fromMap(Map<String, dynamic> map) => Lecture(
-        id: map['id'],
-        title: map['title'],
-        date: map['date'],
-        audioPath: map['audioPath'],
-        transcript: map['transcript'] ?? '',
-        summary: map['summary'] ?? '',
-        durationSeconds: map['durationSeconds'] ?? 0,
-      );
-
-  Lecture copyWith({
-    String? title,
-    String? transcript,
-    String? summary,
-    int? durationSeconds,
-  }) =>
-      Lecture(
-        id: id,
-        title: title ?? this.title,
-        date: date,
-        audioPath: audioPath,
-        transcript: transcript ?? this.transcript,
-        summary: summary ?? this.summary,
-        durationSeconds: durationSeconds ?? this.durationSeconds,
-      );
+  factory Lecture.fromMap(Map<String, dynamic> map) {
+    return Lecture(
+      id: map['id'],
+      title: map['title'],
+      date: map['date'],
+      audioPath: map['audioPath'],
+      transcript: map['transcript'] ?? '',
+      summary: map['summary'] ?? '',
+      durationSeconds: map['durationSeconds'] ?? 0,
+      tag: map['tag'] ?? '一般',
+    );
+  }
 }

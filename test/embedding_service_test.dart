@@ -17,7 +17,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 List<double> normalize(List<double> v) {
   double norm = 0;
-  for (final x in v) norm += x * x;
+  for (final x in v) {
+    norm += x * x;
+  }
   norm = sqrt(norm);
   if (norm == 0) return v;
   return v.map((x) => x / norm).toList();
@@ -26,7 +28,9 @@ List<double> normalize(List<double> v) {
 double cosineSimilarity(List<double> a, List<double> b) {
   assert(a.length == b.length);
   double dot = 0;
-  for (int i = 0; i < a.length; i++) dot += a[i] * b[i];
+  for (int i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+  }
   return dot;
 }
 
@@ -35,12 +39,16 @@ List<double> meanPool(List<List<double>> hiddenState, List<int> mask, int dim) {
   int count = 0;
   for (int i = 0; i < hiddenState.length; i++) {
     if (mask[i] == 1) {
-      for (int j = 0; j < dim; j++) result[j] += hiddenState[i][j];
+      for (int j = 0; j < dim; j++) {
+        result[j] += hiddenState[i][j];
+      }
       count++;
     }
   }
   if (count > 0) {
-    for (int j = 0; j < dim; j++) result[j] /= count;
+    for (int j = 0; j < dim; j++) {
+      result[j] /= count;
+    }
   }
   return result;
 }

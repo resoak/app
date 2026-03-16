@@ -1,5 +1,3 @@
-// lib/utils/text_rank.dart
-
 import '../services/embedding_service.dart';
 
 class TextRank {
@@ -18,10 +16,15 @@ class TextRank {
 
     final n = workSet.length;
     final embService = EmbeddingService();
+    
+    if (!embService.isInitialized) {
+      await embService.initialize();
+    }
+
     final embeddings = <List<double>>[];
 
     for (final s in workSet) {
-      final emb = await embService.embed(s);
+      final emb = embService.embed(s);
       embeddings.add(emb);
     }
 
