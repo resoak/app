@@ -5,25 +5,27 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'package:path/path.dart' as p;
+import 'package:flutter_open_chinese_convert/flutter_open_chinese_convert.dart';
+import '../utils/text_rank.dart';
 
 class SttService {
   static final SttService _instance = SttService._internal();
   factory SttService() => _instance;
   SttService._internal();
 
-  sherpa.OnlineRecognizer? _recognizer;
-  sherpa.OnlineStream? _stream;
+  sherpa.OfflineRecognizer? _recognizer;
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
 
-  String _committedText = "";
-  String _lastCommittedSegment = "";
-  String _lastEmittedText = "";
   String _fullTranscript = "";
   String get fullTranscript => _fullTranscript;
 
   final _transcriptController = StreamController<String>.broadcast();
+  final _summaryController = StreamController<String>.broadcast();
   Stream<String> get transcriptStream => _transcriptController.stream;
+  Stream<String> get summaryStream => _summaryController.stream;
+
+  final List<String> _sentences = [];
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -34,88 +36,100 @@ class SttService {
     final modelDir = Directory(modelDirPath);
     if (!modelDir.existsSync()) modelDir.createSync(recursive: true);
 
-    final files = ['encoder.onnx', 'decoder.onnx', 'joiner.onnx', 'tokens.txt'];
+    final files = ['model.int8.onnx', 'tokens.txt'];
     for (var f in files) {
       final file = File(p.join(modelDirPath, f));
       if (!file.existsSync()) {
+        debugPrint('Copying $f from assets...');
         final data = await rootBundle.load('assets/models/stt/$f');
         await file.writeAsBytes(data.buffer.asUint8List());
+        debugPrint('Copied $f');
       }
     }
 
-    final config = sherpa.OnlineRecognizerConfig(
-      model: sherpa.OnlineModelConfig(
-        transducer: sherpa.OnlineTransducerModelConfig(
-          encoder: p.join(modelDirPath, 'encoder.onnx'),
-          decoder: p.join(modelDirPath, 'decoder.onnx'),
-          joiner: p.join(modelDirPath, 'joiner.onnx'),
+    final config = sherpa.OfflineRecognizerConfig(
+      model: sherpa.OfflineModelConfig(
+        senseVoice: sherpa.OfflineSenseVoiceModelConfig(
+          model: p.join(modelDirPath, 'model.int8.onnx'),
+          language: 'auto',
+          useInverseTextNormalization: true,
         ),
         tokens: p.join(modelDirPath, 'tokens.txt'),
         numThreads: 4,
-        modelType: 'zipformer',
+        modelType: 'sense_voice',
       ),
-      decodingMethod: 'modified_beam_search',
-      maxActivePaths: 4,
-      enableEndpoint: true,
-      rule1MinTrailingSilence: 3.0,
-      rule2MinTrailingSilence: 3.5,
-      rule3MinUtteranceLength: 20.0,
     );
 
-    _recognizer = sherpa.OnlineRecognizer(config);
-    _stream = _recognizer!.createStream();
+    _recognizer = sherpa.OfflineRecognizer(config);
     _isInitialized = true;
+    debugPrint('SenseVoice initialized');
   }
 
   void resetStream() {
-    _stream?.free();
-    _stream = _recognizer?.createStream();
-    _committedText = "";
-    _lastCommittedSegment = "";
-    _lastEmittedText = "";
     _fullTranscript = "";
+    _sentences.clear();
   }
 
-  void acceptWaveform(List<double> samples, int sampleRate) {
-    if (_stream == null || _recognizer == null) return;
+  Future<void> recognizeSegment(List<double> samples, int sampleRate) async {
+    if (_recognizer == null || samples.isEmpty) return;
 
-    _stream!.acceptWaveform(
-      samples: Float32List.fromList(samples),
-      sampleRate: sampleRate,
-    );
+    try {
+      final stream = _recognizer!.createStream();
+      stream.acceptWaveform(
+        samples: Float32List.fromList(samples),
+        sampleRate: sampleRate,
+      );
+      _recognizer!.decode(stream);
+      final result = _recognizer!.getResult(stream);
+      stream.free();
 
-    while (_recognizer!.isReady(_stream!)) {
-      _recognizer!.decode(_stream!);
-    }
+      final rawText = result.text.trim();
+      debugPrint('SenseVoice raw: $rawText');
 
-    final result = _recognizer!.getResult(_stream!);
-    final currentText = result.text.trim();
+      // 簡體轉繁體（台灣標準）
+      final text = await ChineseConverter.convert(rawText, S2TWp());
+      debugPrint('SenseVoice traditional: $text');
 
-    if (_recognizer!.isEndpoint(_stream!)) {
-      if (currentText.isNotEmpty &&
-          currentText != _lastCommittedSegment) {
-        _lastCommittedSegment = currentText;
-        _committedText +=
-            (_committedText.isEmpty ? '' : ' ') + currentText;
-        _fullTranscript = _committedText;
-        _lastEmittedText = _fullTranscript;
+      // 過濾垃圾結果
+      final hasChinese = RegExp(r'[\u4e00-\u9fff]').hasMatch(text);
+      final hasEnoughWords = text.split(' ').length >= 3;
+
+      if (text.isNotEmpty && (hasChinese || hasEnoughWords)) {
+        _fullTranscript += (_fullTranscript.isEmpty ? '' : ' ') + text;
         _transcriptController.add(_fullTranscript);
+        _sentences.add(text);
+        _updateSummary();
+      } else {
+        debugPrint('Filtered out noise: $text');
       }
-      _recognizer!.reset(_stream!);
-    } else if (currentText.isNotEmpty) {
-      final display = _committedText.isEmpty
-          ? currentText
-          : '$_committedText $currentText';
-      if (display != _lastEmittedText) {
-        _lastEmittedText = display;
-        _fullTranscript = display;
-        _transcriptController.add(_fullTranscript);
-      }
+    } catch (e) {
+      debugPrint('SenseVoice error: $e');
     }
+  }
+
+  void _updateSummary() {
+    final sentences = List<String>.from(_sentences);
+    Future(() async {
+      try {
+        final keyPoints = await TextRank.extractKeyPoints(
+          sentences,
+          topN: 5,
+        );
+        if (keyPoints.isNotEmpty) {
+          final summary = keyPoints
+              .asMap()
+              .entries
+              .map((e) => '• ${e.value}')
+              .join('\n');
+          _summaryController.add(summary);
+        }
+      } catch (e) {
+        debugPrint('TextRank error: $e');
+      }
+    });
   }
 
   void dispose() {
-    _stream?.free();
     _recognizer?.free();
     _isInitialized = false;
   }

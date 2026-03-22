@@ -158,6 +158,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
+  flutter_open_chinese_convert:
+    dependency: "direct main"
+    description:
+      name: flutter_open_chinese_convert
+      sha256: c2624f0e612d72b73df7336e1e75f20d2c54d19ce0b47a5b7f4f15c7b319f2a9
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.9.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -534,13 +542,13 @@ packages:
     source: hosted
     version: "2.4.0"
   sqlite3:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: sqlite3
-      sha256: caa693ad15a587a2b4fde093b728131a1827903872171089dedb16f7665d3a91
+      sha256: "45f168ae2213201b54e09429ed0c593dc2c88c924a1488d6f9c523a255d567cb"
       url: "https://pub.dev"
     source: hosted
-    version: "3.2.0"
+    version: "2.4.6"
   stack_trace:
     dependency: transitive
     description:

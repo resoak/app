@@ -15,8 +15,9 @@ class _RecordingScreenState extends State<RecordingScreen> {
   final SttService _sttService = SttService();
   late RecordingService _recordingService;
   final DbService _dbService = DbService();
-  
+
   String _transcript = "";
+  String _summary = "";
   int _seconds = 0;
   Timer? _timer;
 
@@ -30,9 +31,16 @@ class _RecordingScreenState extends State<RecordingScreen> {
   void _startEverything() async {
     await _sttService.initialize();
     _sttService.resetStream();
+
     _sttService.transcriptStream.listen((text) {
       if (mounted) setState(() => _transcript = text);
     });
+
+    // 監聽即時重點
+    _sttService.summaryStream.listen((summary) {
+      if (mounted) setState(() => _summary = summary);
+    });
+
     await _recordingService.start();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (mounted) setState(() => _seconds++);
@@ -42,12 +50,13 @@ class _RecordingScreenState extends State<RecordingScreen> {
   Future<void> _handleSave() async {
     final path = await _recordingService.stop();
     _timer?.cancel();
-    
+
     final newLecture = Lecture(
       title: "課程錄音 ${DateTime.now().hour}:${DateTime.now().minute}",
       date: "${DateTime.now().year}.${DateTime.now().month}.${DateTime.now().day}",
       audioPath: path ?? '',
       transcript: _transcript,
+      summary: _summary,      // 存入最終重點
       durationSeconds: _seconds,
       tag: '一般',
     );
@@ -74,21 +83,81 @@ class _RecordingScreenState extends State<RecordingScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text("正在錄音...", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                  Text(_formatTime(_seconds), style: const TextStyle(color: Colors.white, fontFeatures: [FontFeature.tabularFigures()])),
+                  const Text(
+                    "正在錄音...",
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    _formatTime(_seconds),
+                    style: const TextStyle(color: Colors.white),
+                  ),
                 ],
               ),
             ),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                _transcript.isEmpty ? "等待語音輸入..." : _transcript,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 18, height: 1.5),
+            // 即時逐字稿
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SingleChildScrollView(
+                  reverse: true,
+                  child: Text(
+                    _transcript.isEmpty ? "等待語音輸入..." : _transcript,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      height: 1.6,
+                    ),
+                  ),
+                ),
               ),
             ),
-            const Spacer(),
+            // 即時重點區塊
+            if (_summary.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.purpleAccent.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.auto_awesome,
+                            color: Colors.purpleAccent, size: 14),
+                        SizedBox(width: 6),
+                        Text(
+                          "即時重點",
+                          style: TextStyle(
+                            color: Colors.purpleAccent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _summary,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        height: 1.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 16),
+            // 停止按鈕
             Center(
               child: GestureDetector(
                 onTap: _handleSave,
