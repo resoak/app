@@ -20,7 +20,7 @@ class DbService {
     final dbPath = await getDatabasesPath();
     return openDatabase(
       join(dbPath, 'lecture_vault.db'),
-      version: 1,
+      version: 2,                          // 1 → 2
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE lectures (
@@ -30,9 +30,17 @@ class DbService {
             audioPath TEXT NOT NULL,
             transcript TEXT DEFAULT '',
             summary TEXT DEFAULT '',
-            durationSeconds INTEGER DEFAULT 0
+            durationSeconds INTEGER DEFAULT 0,
+            tag TEXT DEFAULT ''
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN tag TEXT DEFAULT ""',
+          );
+        }
       },
     );
   }

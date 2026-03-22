@@ -1,7 +1,3 @@
-// test/db_service_test.dart
-//
-// 執行：flutter test test/db_service_test.dart
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:lecture_vault/services/db_service.dart';
@@ -27,6 +23,7 @@ void main() {
           transcript: '',
           summary: '',
           durationSeconds: 0,
+          tag: '一般',
         );
 
     test('insertLecture 回傳大於 0 的 id', () async {
@@ -37,7 +34,6 @@ void main() {
     test('getAllLectures 可以讀取剛插入的資料', () async {
       await db.insertLecture(makeLecture(title: '第一講'));
       await db.insertLecture(makeLecture(title: '第二講'));
-
       final lectures = await db.getAllLectures();
       expect(lectures.any((l) => l.title == '第一講'), isTrue);
     });
@@ -46,7 +42,6 @@ void main() {
       final id = await db.insertLecture(makeLecture());
       final lectures = await db.getAllLectures();
       final lecture = lectures.firstWhere((l) => l.id == id);
-
       final updated = Lecture(
         id: lecture.id,
         title: lecture.title,
@@ -55,10 +50,9 @@ void main() {
         transcript: '這是更新後的轉錄內容',
         summary: lecture.summary,
         durationSeconds: lecture.durationSeconds,
+        tag: lecture.tag,
       );
-
       await db.updateLecture(updated);
-
       final all = await db.getAllLectures();
       final result = all.firstWhere((l) => l.id == id);
       expect(result.transcript, equals('這是更新後的轉錄內容'));
@@ -67,7 +61,6 @@ void main() {
     test('deleteLecture 刪除後查不到', () async {
       final id = await db.insertLecture(makeLecture(title: '要刪除的'));
       await db.deleteLecture(id);
-
       final all = await db.getAllLectures();
       expect(all.any((l) => l.id == id), isFalse);
     });
