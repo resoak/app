@@ -7,6 +7,7 @@ import '../models/lecture.dart';
 class DbService {
   static final DbService _instance = DbService._();
   static Database? _db;
+  static const String _dbName = 'lecture_vault.db';
 
   DbService._();
   factory DbService() => _instance;
@@ -19,8 +20,8 @@ class DbService {
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
     return openDatabase(
-      join(dbPath, 'lecture_vault.db'),
-      version: 2,                          // 1 → 2
+      join(dbPath, _dbName),
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE lectures (
@@ -31,7 +32,8 @@ class DbService {
             transcript TEXT DEFAULT '',
             summary TEXT DEFAULT '',
             durationSeconds INTEGER DEFAULT 0,
-            tag TEXT DEFAULT ''
+            tag TEXT DEFAULT '',
+            timelineJson TEXT DEFAULT ''
           )
         ''');
       },
@@ -41,8 +43,24 @@ class DbService {
             'ALTER TABLE lectures ADD COLUMN tag TEXT DEFAULT ""',
           );
         }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN timelineJson TEXT DEFAULT ""',
+          );
+        }
       },
     );
+  }
+
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+
+  Future<void> resetForTests() async {
+    await close();
+    final dbPath = await getDatabasesPath();
+    await deleteDatabase(join(dbPath, _dbName));
   }
 
   Future<int> insertLecture(Lecture lecture) async {

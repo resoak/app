@@ -24,11 +24,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        ndk {
-            // S24 必須包含 arm64-v8a
-            abiFilters.add("arm64-v8a")
-        }
     }
 
     // 移除之前的 pickFirst，讓單一插件自行運作
@@ -39,10 +34,20 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // 本機常見 x86_64 AVD；實機為 arm64-v8a。兩者都打包，方便 flutter run。
+            ndk {
+                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            }
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             isShrinkResources = false
+            // 上架／實機發佈：只留 ARM64，APK 較小。
+            ndk {
+                abiFilters.add("arm64-v8a")
+            }
         }
     }
 }

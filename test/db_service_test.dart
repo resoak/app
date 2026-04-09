@@ -14,6 +14,11 @@ void main() {
 
     setUp(() async {
       db = DbService();
+      await db.resetForTests();
+    });
+
+    tearDown(() async {
+      await db.close();
     });
 
     Lecture makeLecture({String title = '測試講座'}) => Lecture(
@@ -51,11 +56,16 @@ void main() {
         summary: lecture.summary,
         durationSeconds: lecture.durationSeconds,
         tag: lecture.tag,
+        timeline: const [
+          LectureTimelineEntry(text: '重點一', startMs: 1000, endMs: 2400),
+        ],
       );
       await db.updateLecture(updated);
       final all = await db.getAllLectures();
       final result = all.firstWhere((l) => l.id == id);
       expect(result.transcript, equals('這是更新後的轉錄內容'));
+      expect(result.timeline, hasLength(1));
+      expect(result.timeline.first.text, equals('重點一'));
     });
 
     test('deleteLecture 刪除後查不到', () async {

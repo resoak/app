@@ -44,3 +44,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .vsocde/
+
+# Local temp artifacts and downloaded archives
+/.tmp/
