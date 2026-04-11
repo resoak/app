@@ -7,7 +7,7 @@ import '../models/lecture.dart';
 import '../services/background_transcription_service.dart';
 import '../services/db_service.dart';
 import '../services/recording_service.dart';
-import '../services/stt_service.dart';
+
 import '../theme/lecture_vault_theme.dart';
 import '../widgets/recording_waveform.dart';
 
@@ -20,7 +20,7 @@ class RecordingScreen extends StatefulWidget {
 
 class _RecordingScreenState extends State<RecordingScreen>
     with SingleTickerProviderStateMixin {
-  final SttService _sttService = SttService();
+
   late RecordingService _recordingService;
   final DbService _dbService = DbService();
   final BackgroundTranscriptionService _backgroundTranscriptionService =
@@ -33,12 +33,12 @@ class _RecordingScreenState extends State<RecordingScreen>
   late AnimationController _waveCtrl;
   bool _isRecordingActive = false;
   bool _isStopping = false;
-  StreamSubscription<String>? _transcriptSub;
+
 
   @override
   void initState() {
     super.initState();
-    _recordingService = RecordingService(sttService: _sttService);
+    _recordingService = RecordingService();
     _waveCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -72,8 +72,6 @@ class _RecordingScreenState extends State<RecordingScreen>
       });
     } catch (e) {
       const message = '錄音初始化失敗，請稍後再試。';
-      await _transcriptSub?.cancel();
-      _transcriptSub = null;
       if (!mounted) return;
       setState(() {
         _startupError = message;
@@ -96,12 +94,9 @@ class _RecordingScreenState extends State<RecordingScreen>
     final path = await _recordingService.stop();
     _isRecordingActive = false;
     _timer?.cancel();
-    await _transcriptSub?.cancel();
-    _transcriptSub = null;
 
     if (path == null || path.isEmpty) {
       _isStopping = false;
-      _sttService.dispose();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('錄音未成功儲存，請再試一次。')),
@@ -135,7 +130,6 @@ class _RecordingScreenState extends State<RecordingScreen>
 
     unawaited(_backgroundTranscriptionService.transcribeLecture(savedLecture));
 
-    _sttService.dispose();
     _isStopping = false;
 
     if (mounted) Navigator.pop(context, true);
@@ -144,15 +138,10 @@ class _RecordingScreenState extends State<RecordingScreen>
   @override
   void dispose() {
     _timer?.cancel();
-    _transcriptSub?.cancel();
     _waveCtrl.dispose();
     if (_isRecordingActive && !_isStopping) {
       _isStopping = true;
-      unawaited(_recordingService.stop().whenComplete(() {
-        _sttService.dispose();
-      }));
-    } else {
-      _sttService.dispose();
+      unawaited(_recordingService.stop());
     }
     super.dispose();
   }

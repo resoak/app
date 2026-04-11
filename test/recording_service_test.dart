@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lecture_vault/services/recording_service.dart';
-import 'package:lecture_vault/services/stt_service.dart';
 import 'package:record/record.dart';
 
 class _FakeRecorderClient implements RecorderClient {
@@ -40,23 +39,6 @@ class _FakeRecorderClient implements RecorderClient {
   }
 }
 
-class _FakeSttSink implements SttSink {
-  final List<List<double>> acceptedWaveforms = [];
-  final List<int> acceptedSampleRates = [];
-  bool finalized = false;
-
-  @override
-  void acceptWaveform(List<double> samples, int sampleRate) {
-    acceptedWaveforms.add(samples);
-    acceptedSampleRates.add(sampleRate);
-  }
-
-  @override
-  void finalizeStream() {
-    finalized = true;
-  }
-}
-
 void main() {
   group('RecordingService', () {
     test('uses mic Android recorder config', () {
@@ -71,11 +53,9 @@ void main() {
 
     test('permission denied returns false without starting recorder', () async {
       final recorder = _FakeRecorderClient(hasPermissionResult: false);
-      final stt = _FakeSttSink();
       final tempDir = await Directory.systemTemp.createTemp('recording_test_');
 
       final service = RecordingService(
-        sttService: stt,
         recorder: recorder,
         documentsDirectory: () async => tempDir,
       );
@@ -90,11 +70,9 @@ void main() {
 
     test('stop writes wav file and flushes remaining PCM to STT', () async {
       final recorder = _FakeRecorderClient(hasPermissionResult: true);
-      final stt = _FakeSttSink();
       final tempDir = await Directory.systemTemp.createTemp('recording_test_');
 
       final service = RecordingService(
-        sttService: stt,
         recorder: recorder,
         documentsDirectory: () async => tempDir,
       );
@@ -108,9 +86,7 @@ void main() {
       final path = await service.stop();
 
       expect(recorder.stopCalled, isTrue);
-      expect(stt.finalized, isTrue);
-      expect(stt.acceptedWaveforms, hasLength(1));
-      expect(stt.acceptedWaveforms.first, hasLength(2));
+
       expect(path, isNotNull);
 
       final file = File(path!);
@@ -125,47 +101,16 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-    test('odd trailing PCM byte does not crash stop', () async {
-      final recorder = _FakeRecorderClient(hasPermissionResult: true);
-      final stt = _FakeSttSink();
-      final tempDir = await Directory.systemTemp.createTemp('recording_test_');
 
-      final service = RecordingService(
-        sttService: stt,
-        recorder: recorder,
-        documentsDirectory: () async => tempDir,
-      );
-
-      final started = await service.start();
-      expect(started, isTrue);
-
-      recorder.controller.add(Uint8List.fromList([0, 0, 255]));
-      await Future<void>.delayed(Duration.zero);
-
-      final path = await service.stop();
-
-      expect(path, isNotNull);
-      expect(stt.finalized, isTrue);
-      expect(stt.acceptedWaveforms, hasLength(1));
-      expect(stt.acceptedWaveforms.first, hasLength(1));
-
-      final file = File(path!);
-      if (await file.exists()) {
-        await file.delete();
-      }
-      await tempDir.delete(recursive: true);
-    });
 
     test('stop keeps final PCM emitted during recorder stop', () async {
       final recorder = _FakeRecorderClient(
         hasPermissionResult: true,
         bytesEmittedOnStop: Uint8List.fromList([0, 0, 255, 127]),
       );
-      final stt = _FakeSttSink();
       final tempDir = await Directory.systemTemp.createTemp('recording_test_');
 
       final service = RecordingService(
-        sttService: stt,
         recorder: recorder,
         documentsDirectory: () async => tempDir,
       );
@@ -176,9 +121,7 @@ void main() {
       final path = await service.stop();
 
       expect(recorder.stopCalled, isTrue);
-      expect(stt.finalized, isTrue);
-      expect(stt.acceptedWaveforms, hasLength(1));
-      expect(stt.acceptedWaveforms.first, hasLength(2));
+
       expect(path, isNotNull);
 
       final file = File(path!);
@@ -190,43 +133,13 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-    test('stream flushes STT in smaller realtime chunks', () async {
+
+
+    test('writes a supported sample rate into wav header', () async {
       final recorder = _FakeRecorderClient(hasPermissionResult: true);
-      final stt = _FakeSttSink();
       final tempDir = await Directory.systemTemp.createTemp('recording_test_');
 
       final service = RecordingService(
-        sttService: stt,
-        recorder: recorder,
-        documentsDirectory: () async => tempDir,
-      );
-
-      final started = await service.start();
-      expect(started, isTrue);
-
-      recorder.controller.add(Uint8List(3200));
-      await Future<void>.delayed(Duration.zero);
-
-      expect(stt.acceptedWaveforms, hasLength(1));
-      expect(stt.acceptedWaveforms.first, hasLength(1600));
-
-      final path = await service.stop();
-      expect(path, isNotNull);
-
-      final file = File(path!);
-      if (await file.exists()) {
-        await file.delete();
-      }
-      await tempDir.delete(recursive: true);
-    });
-
-    test('writes a supported sample rate into STT and wav header', () async {
-      final recorder = _FakeRecorderClient(hasPermissionResult: true);
-      final stt = _FakeSttSink();
-      final tempDir = await Directory.systemTemp.createTemp('recording_test_');
-
-      final service = RecordingService(
-        sttService: stt,
         recorder: recorder,
         documentsDirectory: () async => tempDir,
       );
@@ -241,9 +154,7 @@ void main() {
 
       final path = await service.stop();
       expect(path, isNotNull);
-      expect(stt.acceptedSampleRates, isNotEmpty);
-      expect(const [8000, 16000, 22050, 32000, 44100, 48000],
-          contains(stt.acceptedSampleRates.last));
+
 
       final bytes = await File(path!).readAsBytes();
       final wavRate = ByteData.sublistView(bytes).getUint32(24, Endian.little);

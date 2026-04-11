@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:record/record.dart';
 
-import 'stt_service.dart';
+
 
 abstract class RecorderClient {
   Future<bool> hasPermission();
@@ -34,22 +34,16 @@ class AudioRecorderClient implements RecorderClient {
 }
 
 class RecordingService {
-  static const int _sttChunkBytes = 3200; // 16kHz mono PCM16 ≈ 100ms
   static const int _defaultSampleRate = 16000;
-  final SttSink sttService;
   final RecorderClient _recorder;
   final Future<Directory> Function() _documentsDirectory;
   StreamSubscription? _audioStreamSub;
   String? _lastPath;
   RandomAccessFile? _raf;
   int _totalPcmBytes = 0;
-  final List<int> _sttBuffer = [];
   Stopwatch? _streamClock;
-  int _sttSampleRate = _defaultSampleRate;
-  bool _sttSampleRateLocked = false;
 
   RecordingService({
-    required this.sttService,
     RecorderClient? recorder,
     Future<Directory> Function()? documentsDirectory,
   })  : _recorder = recorder ?? AudioRecorderClient(),
@@ -76,9 +70,6 @@ class RecordingService {
     );
     _lastPath = path;
     _totalPcmBytes = 0;
-    _sttBuffer.clear();
-    _sttSampleRate = _defaultSampleRate;
-    _sttSampleRateLocked = false;
 
     try {
       _raf = await File(path).open(mode: FileMode.write);
@@ -91,14 +82,8 @@ class RecordingService {
         // 同步寫入，避免 async 造成 stop() 時資料遺失
         _raf?.writeFromSync(data);
         _totalPcmBytes += data.length;
-
-        // 餵給 STT
-        _sttBuffer.addAll(data);
-        _flushSttBuffer();
       }, onError: (Object error, StackTrace stackTrace) {
         debugPrint('RecordingService audio stream error: $error');
-      }, onDone: () {
-        _flushSttBuffer(force: true);
       });
 
       return true;
@@ -121,8 +106,6 @@ class RecordingService {
     await _audioStreamSub?.cancel();
     _audioStreamSub = null;
 
-    _flushSttBuffer(force: true);
-    sttService.finalizeStream();
 
     if (_raf == null || _lastPath == null) return null;
 
@@ -186,24 +169,4 @@ class RecordingService {
     }
   }
 
-  void _flushSttBuffer({bool force = false}) {
-    var bytesToProcess = _sttBuffer.length - (_sttBuffer.length % 2);
-    if (!force && bytesToProcess < _sttChunkBytes) return;
-    if (bytesToProcess == 0) return;
-
-    final pcmBytes = Uint8List.fromList(_sttBuffer.sublist(0, bytesToProcess));
-    final int16Data = Int16List.view(pcmBytes.buffer);
-    final samples = int16Data.map((e) => e / 32768.0).toList(growable: false);
-    if (!_sttSampleRateLocked) {
-      _sttSampleRate = _estimateSampleRate();
-      _sttSampleRateLocked = true;
-    }
-    sttService.acceptWaveform(samples, _sttSampleRate);
-    _sttBuffer.removeRange(0, bytesToProcess);
-
-    if (force && _sttBuffer.isNotEmpty) {
-      debugPrint('RecordingService dropped trailing partial PCM byte.');
-      _sttBuffer.clear();
-    }
-  }
 }

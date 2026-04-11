@@ -9,30 +9,20 @@ import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 import '../models/lecture.dart';
 import '../utils/transcript_post_process.dart';
 
-abstract class SttSink {
-  void acceptWaveform(List<double> samples, int sampleRate);
-  void finalizeStream();
-}
-
-class SttService implements SttSink {
-  static final RegExp _cjkTokenPattern = RegExp(r'[\u4e00-\u9fff]');
-  static final RegExp _latinTokenPattern = RegExp(r'[A-Za-z]');
+class SttService {
   SttService();
 
   final WhisperController _whisperController = WhisperController();
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
-  final bool _supportsCjk = true;
-  bool get supportsCjk => _supportsCjk;
-  final bool _supportsLatin = true;
-  bool get supportsLatin => _supportsLatin;
+
   WhisperModel _activeWhisperModel = WhisperModel.base;
 
   String _committedText = '';
   String _lastEmittedText = '';
   String _fullTranscript = '';
   final List<LectureTimelineEntry> _timeline = [];
-  final List<String> _committedTimelineTokens = [];
+
   String get fullTranscript => _fullTranscript;
   String get committedTranscript =>
       TranscriptPostProcess.normalize(_committedText);
@@ -49,17 +39,7 @@ class SttService implements SttSink {
   final _transcriptController = StreamController<String>.broadcast();
   Stream<String> get transcriptStream => _transcriptController.stream;
 
-  static bool supportsCjkTokens(String tokensContent) {
-    return _cjkTokenPattern.hasMatch(tokensContent);
-  }
 
-  static bool supportsLatinTokens(String tokensContent) {
-    return _latinTokenPattern.hasMatch(tokensContent);
-  }
-
-  String? unsupportedReasonForLanguage(String languageCode) {
-    return null;
-  }
 
   @visibleForTesting
   static WhisperModel selectWhisperModelForLanguage(String languageCode) {
@@ -114,7 +94,6 @@ class SttService implements SttSink {
     _lastEmittedText = '';
     _fullTranscript = '';
     _timeline.clear();
-    _committedTimelineTokens.clear();
   }
 
   void _emitIfChanged(String next) {
@@ -158,13 +137,7 @@ class SttService implements SttSink {
     _emitIfChanged(text);
   }
 
-  @override
-  void acceptWaveform(List<double> samples, int sampleRate) {
-    // Batch Whisper backend: live PCM chunks are intentionally ignored.
-  }
 
-  @override
-  void finalizeStream() {}
 
   List<LectureTimelineEntry> _mapWhisperTimeline(
     List<WhisperTranscribeSegment> segments,
@@ -184,118 +157,7 @@ class SttService implements SttSink {
         .toList(growable: false);
   }
 
-  @visibleForTesting
-  static TimelineEntryComputation? buildTimelineEntry({
-    required List<String> committedTokens,
-    required List<String> incomingTokens,
-    required List<double> timestamps,
-    required String appendedText,
-    required int estimatedStartMs,
-    required int lastEndMs,
-  }) {
-    final currentTokens = normalizeTimelineTokens(incomingTokens);
-    final overlapCount = countTrailingTokenOverlap(
-      committedTokens,
-      currentTokens,
-    );
-    final appendedTokens =
-        currentTokens.skip(overlapCount).toList(growable: false);
-
-    final timelineText = appendedText.isNotEmpty
-        ? appendedText
-        : renderTimelineText(appendedTokens);
-    if (timelineText.isEmpty) return null;
-
-    final startIndex = overlapCount;
-    final startMs = timestamps.isEmpty || startIndex >= timestamps.length
-        ? estimatedStartMs
-        : (timestamps[startIndex] * 1000).round();
-    final rawEndMs =
-        timestamps.isEmpty ? startMs : (timestamps.last * 1000).round();
-    final safeStartMs = startMs < lastEndMs ? lastEndMs : startMs;
-    final safeEndMs = rawEndMs <= safeStartMs ? safeStartMs + 1 : rawEndMs;
-
-    return TimelineEntryComputation(
-      entry: LectureTimelineEntry(
-        text: timelineText,
-        startMs: safeStartMs,
-        endMs: safeEndMs,
-        isEstimated: timestamps.isEmpty,
-      ),
-      appendedTokens: appendedTokens,
-    );
-  }
-
-  @visibleForTesting
-  static List<String> normalizeTimelineTokens(List<String> tokens) {
-    return tokens
-        .map((token) => token.trim())
-        .where((token) => token.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  @visibleForTesting
-  static int countTrailingTokenOverlap(
-    List<String> committed,
-    List<String> incoming,
-  ) {
-    if (committed.isEmpty || incoming.isEmpty) return 0;
-
-    final maxOverlap =
-        committed.length < incoming.length ? committed.length : incoming.length;
-    for (int k = maxOverlap; k > 0; k--) {
-      var matches = true;
-      for (int i = 0; i < k; i++) {
-        if (committed[committed.length - k + i] != incoming[i]) {
-          matches = false;
-          break;
-        }
-      }
-      if (matches) return k;
-    }
-    return 0;
-  }
-
-  @visibleForTesting
-  static String renderTimelineText(List<String> tokens) {
-    if (tokens.isEmpty) return '';
-    final out = StringBuffer();
-    var needsSpace = false;
-    for (final rawToken in tokens) {
-      final token = rawToken.trim();
-      if (token.isEmpty) continue;
-
-      if (token.startsWith('▁')) {
-        final word = token.substring(1);
-        if (word.isEmpty) continue;
-        if (out.isNotEmpty) out.write(' ');
-        out.write(word);
-        needsSpace = false;
-        continue;
-      }
-
-      final isAsciiWord = RegExp(r'^[A-Za-z0-9]+$').hasMatch(token);
-      if (out.isNotEmpty && needsSpace && isAsciiWord) {
-        out.write(' ');
-      }
-      out.write(token);
-      needsSpace = isAsciiWord;
-    }
-    return out.toString().trim();
-  }
-
   void dispose() {
     _isInitialized = false;
-    _committedTimelineTokens.clear();
   }
-}
-
-class TimelineEntryComputation {
-  const TimelineEntryComputation({
-    required this.entry,
-    required this.appendedTokens,
-  });
-
-  final LectureTimelineEntry entry;
-  final List<String> appendedTokens;
 }
