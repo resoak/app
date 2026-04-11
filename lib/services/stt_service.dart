@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
-import '../utils/transcript_post_process.dart';
 import '../models/lecture.dart';
+import '../utils/transcript_post_process.dart';
 
 abstract class SttSink {
   void acceptWaveform(List<double> samples, int sampleRate);
@@ -16,35 +15,35 @@ abstract class SttSink {
 }
 
 class SttService implements SttSink {
-  static final SttService _instance = SttService._internal();
   static final RegExp _cjkTokenPattern = RegExp(r'[\u4e00-\u9fff]');
   static final RegExp _latinTokenPattern = RegExp(r'[A-Za-z]');
-  static const _modelFiles = [
-    'encoder.onnx',
-    'decoder.onnx',
-    'joiner.onnx',
-    'tokens.txt',
-  ];
-  static const _modelVersionFile = 'model_version.txt';
-  factory SttService() => _instance;
-  SttService._internal();
+  SttService();
 
-  sherpa.OnlineRecognizer? _recognizer;
-  sherpa.OnlineStream? _stream;
+  final WhisperController _whisperController = WhisperController();
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
-  bool _supportsCjk = false;
+  final bool _supportsCjk = true;
   bool get supportsCjk => _supportsCjk;
-  bool _supportsLatin = false;
+  final bool _supportsLatin = true;
   bool get supportsLatin => _supportsLatin;
+  WhisperModel _activeWhisperModel = WhisperModel.base;
 
   String _committedText = '';
-  String _lastCommittedSegment = '';
   String _lastEmittedText = '';
   String _fullTranscript = '';
   final List<LectureTimelineEntry> _timeline = [];
   final List<String> _committedTimelineTokens = [];
   String get fullTranscript => _fullTranscript;
+  String get committedTranscript =>
+      TranscriptPostProcess.normalize(_committedText);
+  String get persistedTranscript {
+    final committed = committedTranscript;
+    final full = TranscriptPostProcess.normalize(_fullTranscript);
+    if (full.length > committed.length) return full;
+    if (committed.isNotEmpty) return committed;
+    return full;
+  }
+
   List<LectureTimelineEntry> get timeline => List.unmodifiable(_timeline);
 
   final _transcriptController = StreamController<String>.broadcast();
@@ -59,87 +58,59 @@ class SttService implements SttSink {
   }
 
   String? unsupportedReasonForLanguage(String languageCode) {
-    final normalized = languageCode.toLowerCase();
-    if (normalized.startsWith('zh') && !_supportsCjk) {
-      return '目前內建語音模型不支援中文，請改用英文或中英雙語 STT 模型。';
-    }
-    if (normalized.startsWith('en') && !_supportsLatin) {
-      return '目前內建語音模型不支援英文，請改用中文或中英雙語 STT 模型。';
-    }
     return null;
   }
 
-  Future<void> _syncModelAssets(String modelDirPath) async {
-    final bundledVersion =
-        (await rootBundle.loadString('assets/models/stt/$_modelVersionFile'))
-            .trim();
-    final localVersionFile = File(p.join(modelDirPath, _modelVersionFile));
-    final localVersion = localVersionFile.existsSync()
-        ? localVersionFile.readAsStringSync().trim()
-        : '';
-    final shouldRefresh = localVersion != bundledVersion ||
-        _modelFiles.any((f) => !File(p.join(modelDirPath, f)).existsSync());
+  @visibleForTesting
+  static WhisperModel selectWhisperModelForLanguage(String languageCode) {
+    return WhisperModel.base;
+  }
 
-    if (!shouldRefresh) return;
-
-    for (final f in _modelFiles) {
-      final data = await rootBundle.load('assets/models/stt/$f');
-      await File(p.join(modelDirPath, f))
-          .writeAsBytes(data.buffer.asUint8List());
+  static String _bundledAssetForModel(WhisperModel model) {
+    switch (model) {
+      case WhisperModel.medium:
+        return 'assets/models/whisper/ggml-medium.bin';
+      case WhisperModel.small:
+        return 'assets/models/whisper/ggml-small.bin';
+      case WhisperModel.base:
+        return 'assets/models/whisper/ggml-base.bin';
+      case WhisperModel.baseEn:
+        return 'assets/models/whisper/ggml-base.en.bin';
+      case WhisperModel.tinyEn:
+        return 'assets/models/whisper/ggml-tiny.en.bin';
+      case WhisperModel.tiny:
+        return 'assets/models/whisper/ggml-tiny.bin';
+      default:
+        throw UnsupportedError(
+            'Bundled Whisper model not available: ${model.name}');
     }
-    await localVersionFile.writeAsString(bundledVersion);
+  }
+
+  Future<void> _ensureBundledModelPresent(WhisperModel model) async {
+    final modelPath = await _whisperController.getPath(model);
+    final file = File(modelPath);
+    if (file.existsSync()) return;
+
+    final data = await rootBundle.load(_bundledAssetForModel(model));
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+  }
+
+  Future<void> _ensureModelReady() async {
+    await _ensureBundledModelPresent(_activeWhisperModel);
+    await _whisperController.initModel(_activeWhisperModel);
   }
 
   Future<void> initialize() async {
     if (_isInitialized) return;
-    sherpa.initBindings();
-
-    final dir = await getApplicationDocumentsDirectory();
-    final modelDirPath = p.join(dir.path, 'stt_model');
-    final modelDir = Directory(modelDirPath);
-    if (!modelDir.existsSync()) modelDir.createSync(recursive: true);
-
-    await _syncModelAssets(modelDirPath);
-
-    final tokensContent =
-        await File(p.join(modelDirPath, 'tokens.txt')).readAsString();
-    _supportsCjk = supportsCjkTokens(tokensContent);
-    _supportsLatin = supportsLatinTokens(tokensContent);
-
-    /// 與 [RecordingService] 的 16k PCM 一致。
-    /// 目前內建模型是 sherpa-onnx 的中英雙語 streaming zipformer 模型，
-    /// 這裡維持較保守的官方相容設定，避免 native 初始化失敗。
-    final config = sherpa.OnlineRecognizerConfig(
-      feat: const sherpa.FeatureConfig(sampleRate: 16000, featureDim: 80),
-      model: sherpa.OnlineModelConfig(
-        transducer: sherpa.OnlineTransducerModelConfig(
-          encoder: p.join(modelDirPath, 'encoder.onnx'),
-          decoder: p.join(modelDirPath, 'decoder.onnx'),
-          joiner: p.join(modelDirPath, 'joiner.onnx'),
-        ),
-        tokens: p.join(modelDirPath, 'tokens.txt'),
-        numThreads: 4,
-        debug: kDebugMode,
-      ),
-      decodingMethod: 'greedy_search',
-      maxActivePaths: 4,
-      blankPenalty: 0,
-      enableEndpoint: true,
-      rule1MinTrailingSilence: 2.4,
-      rule2MinTrailingSilence: 1.2,
-      rule3MinUtteranceLength: 20.0,
-    );
-
-    _recognizer = sherpa.OnlineRecognizer(config);
-    _stream = _recognizer!.createStream();
+    _activeWhisperModel = selectWhisperModelForLanguage(
+        ui.PlatformDispatcher.instance.locale.languageCode);
+    await _ensureModelReady();
     _isInitialized = true;
   }
 
   void resetStream() {
-    _stream?.free();
-    _stream = _recognizer?.createStream();
     _committedText = '';
-    _lastCommittedSegment = '';
     _lastEmittedText = '';
     _fullTranscript = '';
     _timeline.clear();
@@ -153,94 +124,64 @@ class SttService implements SttSink {
     _transcriptController.add(_fullTranscript);
   }
 
+  @visibleForTesting
+  void setTranscriptStateForTest({
+    String committedText = '',
+    String fullTranscript = '',
+  }) {
+    _committedText = committedText;
+    _fullTranscript = fullTranscript;
+  }
+
+  Future<void> transcribeFile(String audioPath) async {
+    await initialize();
+    _emitIfChanged('Transcribing...');
+
+    final result = await _whisperController.transcribe(
+      model: _activeWhisperModel,
+      audioPath: audioPath,
+      lang: _activeWhisperModel.name.endsWith('En') ? 'en' : 'zh',
+      withTimestamps: true,
+      splitOnWord: false,
+      threads: 6,
+      vadMode: WhisperVadMode.auto,
+    );
+
+    final response = result?.transcription;
+    final text = TranscriptPostProcess.normalize(response?.text ?? '');
+    final segments = response?.segments ?? const <WhisperTranscribeSegment>[];
+
+    _committedText = text;
+    _timeline
+      ..clear()
+      ..addAll(_mapWhisperTimeline(segments));
+    _emitIfChanged(text);
+  }
+
   @override
   void acceptWaveform(List<double> samples, int sampleRate) {
-    if (_stream == null || _recognizer == null) return;
-
-    _stream!.acceptWaveform(
-      samples: Float32List.fromList(samples),
-      sampleRate: sampleRate,
-    );
-
-    while (_recognizer!.isReady(_stream!)) {
-      _recognizer!.decode(_stream!);
-    }
-
-    final result = _recognizer!.getResult(_stream!);
-    final raw = result.text.trim();
-    if (raw.isEmpty) return;
-
-    if (_recognizer!.isEndpoint(_stream!)) {
-      final t = TranscriptPostProcess.normalize(raw);
-      if (t.isNotEmpty && t != _lastCommittedSegment) {
-        final previousCommitted = _committedText;
-        final merged =
-            TranscriptPostProcess.mergeTrailingOverlap(_committedText, t);
-        if (merged != null) {
-          _lastCommittedSegment = t;
-          _committedText = merged;
-          _appendTimelineEntry(result, previousCommitted, merged, t);
-          _emitIfChanged(TranscriptPostProcess.normalize(_committedText));
-        }
-      }
-      _recognizer!.reset(_stream!);
-      return;
-    }
-
-    final display = TranscriptPostProcess.composePartial(_committedText, raw);
-    _emitIfChanged(display);
+    // Batch Whisper backend: live PCM chunks are intentionally ignored.
   }
 
-  /// 錄音結束時呼叫：告知串流已無更多音訊，把最後一段解碼完並合併進轉錄。
   @override
-  void finalizeStream() {
-    if (_stream == null || _recognizer == null) return;
+  void finalizeStream() {}
 
-    _stream!.inputFinished();
-    while (_recognizer!.isReady(_stream!)) {
-      _recognizer!.decode(_stream!);
-    }
-
-    final result = _recognizer!.getResult(_stream!);
-    final t = TranscriptPostProcess.normalize(result.text.trim());
-    if (t.isNotEmpty) {
-      final previousCommitted = _committedText;
-      final merged =
-          TranscriptPostProcess.mergeTrailingOverlap(_committedText, t);
-      if (merged != null) {
-        _committedText = merged;
-        _appendTimelineEntry(result, previousCommitted, merged, t);
-        _emitIfChanged(TranscriptPostProcess.normalize(_committedText));
-      }
-    }
-  }
-
-  void _appendTimelineEntry(
-    sherpa.OnlineRecognizerResult result,
-    String previousCommitted,
-    String mergedTranscript,
-    String normalizedSegment,
+  List<LectureTimelineEntry> _mapWhisperTimeline(
+    List<WhisperTranscribeSegment> segments,
   ) {
-    final appendedText = _extractAppendedText(
-      previousCommitted,
-      mergedTranscript,
-      normalizedSegment,
-    );
-    final entry = buildTimelineEntry(
-      committedTokens: _committedTimelineTokens,
-      incomingTokens: result.tokens,
-      timestamps: result.timestamps,
-      appendedText: appendedText,
-      estimatedStartMs: _timeline.isEmpty ? 0 : _timeline.last.endMs,
-      lastEndMs: _timeline.isEmpty ? 0 : _timeline.last.endMs,
-    );
-    if (entry == null) return;
-
-    _timeline.add(entry.entry);
-
-    if (entry.appendedTokens.isNotEmpty) {
-      _committedTimelineTokens.addAll(entry.appendedTokens);
-    }
+    return segments
+        .map(
+          (segment) => LectureTimelineEntry(
+            text: TranscriptPostProcess.normalize(segment.text),
+            startMs: segment.fromTs.inMilliseconds,
+            endMs: segment.toTs.inMilliseconds <= segment.fromTs.inMilliseconds
+                ? segment.fromTs.inMilliseconds + 1
+                : segment.toTs.inMilliseconds,
+            isEstimated: false,
+          ),
+        )
+        .where((entry) => entry.text.isNotEmpty)
+        .toList(growable: false);
   }
 
   @visibleForTesting
@@ -283,21 +224,6 @@ class SttService implements SttSink {
       ),
       appendedTokens: appendedTokens,
     );
-  }
-
-  String _extractAppendedText(
-    String previousCommitted,
-    String mergedTranscript,
-    String fallback,
-  ) {
-    final previous = previousCommitted.trim();
-    final merged = mergedTranscript.trim();
-    if (previous.isEmpty) return fallback.trim();
-    if (merged.startsWith(previous)) {
-      final appended = merged.substring(previous.length).trim();
-      if (appended.isNotEmpty) return appended;
-    }
-    return fallback.trim();
   }
 
   @visibleForTesting
@@ -359,13 +285,7 @@ class SttService implements SttSink {
   }
 
   void dispose() {
-    _stream?.free();
-    _recognizer?.free();
-    _stream = null;
-    _recognizer = null;
     _isInitialized = false;
-    _supportsCjk = false;
-    _supportsLatin = false;
     _committedTimelineTokens.clear();
   }
 }

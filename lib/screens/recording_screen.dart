@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/lecture.dart';
+import '../services/background_transcription_service.dart';
 import '../services/db_service.dart';
 import '../services/recording_service.dart';
 import '../services/stt_service.dart';
-import '../utils/paragraph_summary.dart';
 import '../theme/lecture_vault_theme.dart';
 import '../widgets/recording_waveform.dart';
 
@@ -23,6 +23,8 @@ class _RecordingScreenState extends State<RecordingScreen>
   final SttService _sttService = SttService();
   late RecordingService _recordingService;
   final DbService _dbService = DbService();
+  final BackgroundTranscriptionService _backgroundTranscriptionService =
+      BackgroundTranscriptionService();
 
   String _transcript = '';
   String? _startupError;
@@ -46,35 +48,13 @@ class _RecordingScreenState extends State<RecordingScreen>
 
   void _startEverything() async {
     try {
-      await _sttService.initialize();
-      final deviceLanguage =
-          WidgetsBinding.instance.platformDispatcher.locale.languageCode;
-      final unsupportedReason = _sttService.unsupportedReasonForLanguage(
-        deviceLanguage,
-      );
-      if (unsupportedReason != null) {
-        if (!mounted) return;
-        setState(() {
-          _startupError = unsupportedReason;
-          _transcript = unsupportedReason;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(unsupportedReason)),
-        );
-        return;
+      if (mounted) {
+        setState(() => _transcript = '錄音完成後將在背景轉錄…');
       }
-
-      _sttService.resetStream();
-      _transcriptSub?.cancel();
-      _transcriptSub = _sttService.transcriptStream.listen((text) {
-        if (mounted) setState(() => _transcript = text);
-      });
 
       final started = await _recordingService.start();
       if (!started) {
         const message = '無法開始錄音，請確認已允許麥克風權限。';
-        await _transcriptSub?.cancel();
-        _transcriptSub = null;
         if (!mounted) return;
         setState(() {
           _startupError = message;
@@ -130,9 +110,6 @@ class _RecordingScreenState extends State<RecordingScreen>
       return;
     }
 
-    // stop() 內會 finalize 串流；Stream 的 setState 可能尚未套用，以服務內最終字串為準。
-    final transcriptForDb = _sttService.fullTranscript;
-
     final now = DateTime.now();
     final dateLabel =
         '${now.year}.${now.month.toString().padLeft(2, '0')}.${now.day.toString().padLeft(2, '0')}';
@@ -143,23 +120,20 @@ class _RecordingScreenState extends State<RecordingScreen>
       title: '課程錄音 $dateLabel $timeLabel',
       date: dateLabel,
       audioPath: path,
-      transcript: transcriptForDb,
+      transcript: '',
+      summary: '背景轉錄中…',
       durationSeconds: _seconds,
       tag: '一般',
-      timeline: _sttService.timeline,
+      timeline: const [],
     );
 
     final id = await _dbService.insertLecture(newLecture);
-    final summary = await ParagraphSummary.fromTranscript(transcriptForDb);
-    await _dbService.updateLecture(
-      newLecture.copyWith(
-        id: id,
-        transcript: transcriptForDb,
-        summary: summary,
-        durationSeconds: _seconds,
-        timeline: _sttService.timeline,
-      ),
+    final savedLecture = newLecture.copyWith(
+      id: id,
+      durationSeconds: _seconds,
     );
+
+    unawaited(_backgroundTranscriptionService.transcribeLecture(savedLecture));
 
     _sttService.dispose();
     _isStopping = false;

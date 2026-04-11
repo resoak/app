@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lecture_vault/services/stt_service.dart';
+import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 void main() {
   group('SttService 初始狀態', () {
@@ -49,6 +50,35 @@ void main() {
       final stt = SttService();
       stt.resetStream();
       expect(stt.fullTranscript, equals(''));
+    });
+  });
+
+  group('SttService whisper model selection', () {
+    test('所有語系都選擇更強的多語 medium', () {
+      expect(
+        SttService.selectWhisperModelForLanguage('en-US'),
+        equals(WhisperModel.medium),
+      );
+      expect(
+        SttService.selectWhisperModelForLanguage('zh-TW'),
+        equals(WhisperModel.medium),
+      );
+    });
+  });
+
+  group('SttService transcript persistence', () {
+    test('persistedTranscript 優先保留較長的完整轉錄', () {
+      final stt = SttService();
+      stt.resetStream();
+      stt.setTranscriptStateForTest(
+        committedText: 'today is monday',
+        fullTranscript: 'today is monday tomorrow is tuesday',
+      );
+
+      expect(
+        stt.persistedTranscript,
+        equals('today is monday tomorrow is tuesday'),
+      );
     });
   });
 

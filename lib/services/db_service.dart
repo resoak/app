@@ -1,5 +1,7 @@
 // lib/services/db_service.dart
 
+import 'dart:async';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/lecture.dart';
@@ -8,9 +10,19 @@ class DbService {
   static final DbService _instance = DbService._();
   static Database? _db;
   static const String _dbName = 'lecture_vault.db';
+  final StreamController<void> _changesController =
+      StreamController<void>.broadcast();
 
   DbService._();
   factory DbService() => _instance;
+
+  Stream<void> get changes => _changesController.stream;
+
+  void _emitChange() {
+    if (!_changesController.isClosed) {
+      _changesController.add(null);
+    }
+  }
 
   Future<Database> get db async {
     _db ??= await _initDb();
@@ -65,13 +77,27 @@ class DbService {
 
   Future<int> insertLecture(Lecture lecture) async {
     final database = await db;
-    return database.insert('lectures', lecture.toMap());
+    final id = await database.insert('lectures', lecture.toMap());
+    _emitChange();
+    return id;
   }
 
   Future<List<Lecture>> getAllLectures() async {
     final database = await db;
     final maps = await database.query('lectures', orderBy: 'date DESC');
     return maps.map((m) => Lecture.fromMap(m)).toList();
+  }
+
+  Future<Lecture?> getLectureById(int id) async {
+    final database = await db;
+    final maps = await database.query(
+      'lectures',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return Lecture.fromMap(maps.first);
   }
 
   Future<void> updateLecture(Lecture lecture) async {
@@ -82,10 +108,12 @@ class DbService {
       where: 'id = ?',
       whereArgs: [lecture.id],
     );
+    _emitChange();
   }
 
   Future<void> deleteLecture(int id) async {
     final database = await db;
     await database.delete('lectures', where: 'id = ?', whereArgs: [id]);
+    _emitChange();
   }
 }

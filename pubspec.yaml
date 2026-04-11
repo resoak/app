@@ -14,6 +14,7 @@ dependencies:
   path: ^1.9.0
   sqflite: ^2.3.0
   sherpa_onnx: ^1.12.0
+  whisper_ggml_plus: ^1.5.2
   audioplayers: ^5.2.1
   google_fonts: ^6.2.1
 
@@ -30,7 +31,21 @@ flutter:
     - assets/models/stt/decoder.onnx
     - assets/models/stt/joiner.onnx
     - assets/models/stt/tokens.txt
+    - assets/models/stt/bpe.vocab
+    - assets/models/stt/hotwords.txt
     - assets/models/stt/model_version.txt
+    - assets/models/stt_en/encoder.onnx
+    - assets/models/stt_en/decoder.onnx
+    - assets/models/stt_en/joiner.onnx
+    - assets/models/stt_en/tokens.txt
+    - assets/models/stt_en/hotwords.txt
+    - assets/models/stt_en/model_version.txt
+    - assets/models/whisper/ggml-tiny.bin
+    - assets/models/whisper/ggml-tiny.en.bin
+    - assets/models/whisper/ggml-base.bin
+    - assets/models/whisper/ggml-base.en.bin
+    - assets/models/whisper/ggml-small.bin
+    - assets/models/whisper/ggml-medium.bin
     - assets/audio/test.wav
 
 dependency_overrides:

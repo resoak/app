@@ -28,5 +28,25 @@ void main() {
         '第一章 節重點',
       );
     });
+
+    test('mergeTrailingOverlap 英文以單字邊界合併', () {
+      expect(
+        TranscriptPostProcess.mergeTrailingOverlap(
+          'today is monday',
+          'monday tomorrow is tuesday',
+        ),
+        'today is monday tomorrow is tuesday',
+      );
+    });
+
+    test('composePartial 英文不做字元級切字合併', () {
+      expect(
+        TranscriptPostProcess.composePartial(
+          'today is monday',
+          'day tomorrow is tuesday',
+        ),
+        'today is monday day tomorrow is tuesday',
+      );
+    });
   });
 }

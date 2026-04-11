@@ -47,3 +47,4 @@ app.*.map.json
 
 # Local temp artifacts and downloaded archives
 /.tmp/
+assets/models/whisper/*.bin

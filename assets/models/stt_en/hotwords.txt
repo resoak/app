@@ -1,0 +1,13 @@
+today
+monday
+tomorrow
+tuesday
+wednesday
+thursday
+friday
+saturday
+sunday
+today is monday
+tomorrow is tuesday
+today is monday tomorrow is tuesday
+today is monday, tomorrow is tuesday

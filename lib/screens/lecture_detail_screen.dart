@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import '../models/lecture.dart';
+import '../services/db_service.dart';
 import '../theme/lecture_vault_theme.dart';
 
 class LectureDetailScreen extends StatefulWidget {
@@ -17,8 +18,11 @@ class LectureDetailScreen extends StatefulWidget {
 }
 
 class _LectureDetailScreenState extends State<LectureDetailScreen> {
+  final DbService _dbService = DbService();
   late AudioPlayer _audioPlayer;
+  late Lecture _lecture;
   final List<StreamSubscription<dynamic>> _playerSubscriptions = [];
+  StreamSubscription<void>? _dbChangesSub;
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
@@ -26,7 +30,18 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _lecture = widget.lecture;
     _audioPlayer = AudioPlayer();
+    final initialId = _lecture.id;
+    if (initialId != null) {
+      unawaited(_refreshLecture(initialId));
+    }
+    _dbChangesSub = _dbService.changes.listen((_) {
+      final id = _lecture.id;
+      if (id != null) {
+        _refreshLecture(id);
+      }
+    });
 
     _playerSubscriptions.add(_audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
@@ -41,22 +56,30 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
     }));
   }
 
+  Future<void> _refreshLecture(int id) async {
+    final updated = await _dbService.getLectureById(id);
+    if (!mounted || updated == null) return;
+    setState(() {
+      _lecture = updated;
+    });
+  }
+
   Future<void> _togglePlayback() async {
     if (_isPlaying) {
       await _audioPlayer.pause();
     } else {
-      final file = File(widget.lecture.audioPath);
+      final file = File(_lecture.audioPath);
       final exists = await file.exists();
 
       if (!exists) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('找不到音檔：${widget.lecture.audioPath}')),
+            SnackBar(content: Text('找不到音檔：${_lecture.audioPath}')),
           );
         }
         return;
       }
-      await _audioPlayer.play(DeviceFileSource(widget.lecture.audioPath));
+      await _audioPlayer.play(DeviceFileSource(_lecture.audioPath));
     }
   }
 
@@ -67,7 +90,7 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
   }
 
   List<_TimelineItem> _buildTimeline() {
-    final l = widget.lecture;
+    final l = _lecture;
     if (l.timeline.isNotEmpty) {
       return l.timeline
           .map(
@@ -113,7 +136,7 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
   }
 
   String _summaryParagraph() {
-    final s = widget.lecture.summary.trim();
+    final s = _lecture.summary.trim();
     if (s.isEmpty) {
       return '尚無摘要。';
     }
@@ -143,7 +166,7 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 Text(
-                  _analysisTitle(widget.lecture.title),
+                  _analysisTitle(_lecture.title),
                   style: lvHeading(22, weight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
@@ -389,9 +412,7 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Text(
-        widget.lecture.transcript.isEmpty
-            ? '尚無轉錄內容'
-            : widget.lecture.transcript,
+        _lecture.transcript.isEmpty ? '尚無轉錄內容' : _lecture.transcript,
         style: TextStyle(
           color: Colors.white.withValues(alpha: 0.72),
           fontSize: 14,
@@ -403,6 +424,7 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
 
   @override
   void dispose() {
+    _dbChangesSub?.cancel();
     for (final subscription in _playerSubscriptions) {
       subscription.cancel();
     }

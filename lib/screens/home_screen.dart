@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -18,8 +19,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final DbService _dbService = DbService();
+  StreamSubscription<void>? _dbChangesSub;
   List<Lecture> _lectures = [];
   final Map<int, String> _fileSizeById = {};
+  bool _isLoadingLectures = true;
+  int _refreshGeneration = 0;
   String _filterKey = 'all';
   String _searchQuery = '';
   int _bottomIndex = 0;
@@ -41,13 +45,34 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _refreshData();
+    _dbChangesSub = _dbService.changes.listen((_) {
+      if (mounted) {
+        _refreshData();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshData();
+    });
   }
 
   Future<void> _refreshData() async {
+    final refreshGeneration = ++_refreshGeneration;
     final data = await _dbService.getAllLectures();
 
-    if (!mounted) return;
+    if (!mounted || refreshGeneration != _refreshGeneration) return;
+
+    setState(() {
+      _lectures = data;
+      _isLoadingLectures = false;
+      if (_selectedLectureId != null &&
+          !data.any((e) => e.id == _selectedLectureId)) {
+        _selectedLectureId = null;
+      }
+      if (_selectedLectureId == null && data.isNotEmpty) {
+        _selectedLectureId = data.first.id;
+      }
+    });
 
     final sizes = <int, String>{};
     for (final l in data) {
@@ -65,19 +90,11 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || refreshGeneration != _refreshGeneration) return;
     setState(() {
-      _lectures = data;
       _fileSizeById
         ..clear()
         ..addAll(sizes);
-      if (_selectedLectureId != null &&
-          !data.any((e) => e.id == _selectedLectureId)) {
-        _selectedLectureId = null;
-      }
-      if (_selectedLectureId == null && data.isNotEmpty) {
-        _selectedLectureId = data.first.id;
-      }
     });
   }
 
@@ -244,27 +261,30 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 18),
           Expanded(
-            child: _visibleLectures.isEmpty
-                ? Center(
-                    child: Text(
-                      _lectures.isEmpty
-                          ? '還沒有錄音\n點中央 + 開始錄音'
-                          : _filterKey == 'all'
-                              ? '尚無課程'
-                              : '此標籤尚無課程',
-                      textAlign: TextAlign.center,
-                      style: lvMono(14, color: LectureVaultColors.textMuted),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: EdgeInsets.zero,
-                    itemCount: _visibleLectures.length,
-                    itemBuilder: (context, index) {
-                      final lecture = _visibleLectures[index];
-                      final isSelected = lecture.id == _selectedLectureId;
-                      return _buildLectureCard(lecture, isSelected);
-                    },
-                  ),
+            child: _isLoadingLectures
+                ? const Center(child: CircularProgressIndicator())
+                : _visibleLectures.isEmpty
+                    ? Center(
+                        child: Text(
+                          _lectures.isEmpty
+                              ? '還沒有錄音\n點中央 + 開始錄音'
+                              : _filterKey == 'all'
+                                  ? '尚無課程'
+                                  : '此標籤尚無課程',
+                          textAlign: TextAlign.center,
+                          style:
+                              lvMono(14, color: LectureVaultColors.textMuted),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.zero,
+                        itemCount: _visibleLectures.length,
+                        itemBuilder: (context, index) {
+                          final lecture = _visibleLectures[index];
+                          final isSelected = lecture.id == _selectedLectureId;
+                          return _buildLectureCard(lecture, isSelected);
+                        },
+                      ),
           ),
         ],
       ),
@@ -553,7 +573,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _dbService.close();
+    _dbChangesSub?.cancel();
     super.dispose();
   }
 }

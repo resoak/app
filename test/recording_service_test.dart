@@ -8,9 +8,13 @@ import 'package:lecture_vault/services/stt_service.dart';
 import 'package:record/record.dart';
 
 class _FakeRecorderClient implements RecorderClient {
-  _FakeRecorderClient({required this.hasPermissionResult});
+  _FakeRecorderClient({
+    required this.hasPermissionResult,
+    this.bytesEmittedOnStop,
+  });
 
   final bool hasPermissionResult;
+  final Uint8List? bytesEmittedOnStop;
   final StreamController<Uint8List> controller = StreamController<Uint8List>();
   bool startCalled = false;
   bool stopCalled = false;
@@ -27,6 +31,10 @@ class _FakeRecorderClient implements RecorderClient {
   @override
   Future<String?> stop() async {
     stopCalled = true;
+    if (bytesEmittedOnStop != null) {
+      controller.add(bytesEmittedOnStop!);
+      await Future<void>.delayed(Duration.zero);
+    }
     await controller.close();
     return null;
   }
@@ -34,11 +42,13 @@ class _FakeRecorderClient implements RecorderClient {
 
 class _FakeSttSink implements SttSink {
   final List<List<double>> acceptedWaveforms = [];
+  final List<int> acceptedSampleRates = [];
   bool finalized = false;
 
   @override
   void acceptWaveform(List<double> samples, int sampleRate) {
     acceptedWaveforms.add(samples);
+    acceptedSampleRates.add(sampleRate);
   }
 
   @override
@@ -49,6 +59,16 @@ class _FakeSttSink implements SttSink {
 
 void main() {
   group('RecordingService', () {
+    test('uses mic Android recorder config', () {
+      expect(RecordingService.recordingConfig.encoder, AudioEncoder.pcm16bits);
+      expect(RecordingService.recordingConfig.sampleRate, 16000);
+      expect(RecordingService.recordingConfig.numChannels, 1);
+      expect(
+        RecordingService.recordingConfig.androidConfig.audioSource,
+        AndroidAudioSource.mic,
+      );
+    });
+
     test('permission denied returns false without starting recorder', () async {
       final recorder = _FakeRecorderClient(hasPermissionResult: false);
       final stt = _FakeSttSink();
@@ -130,6 +150,107 @@ void main() {
       expect(stt.acceptedWaveforms.first, hasLength(1));
 
       final file = File(path!);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      await tempDir.delete(recursive: true);
+    });
+
+    test('stop keeps final PCM emitted during recorder stop', () async {
+      final recorder = _FakeRecorderClient(
+        hasPermissionResult: true,
+        bytesEmittedOnStop: Uint8List.fromList([0, 0, 255, 127]),
+      );
+      final stt = _FakeSttSink();
+      final tempDir = await Directory.systemTemp.createTemp('recording_test_');
+
+      final service = RecordingService(
+        sttService: stt,
+        recorder: recorder,
+        documentsDirectory: () async => tempDir,
+      );
+
+      final started = await service.start();
+      expect(started, isTrue);
+
+      final path = await service.stop();
+
+      expect(recorder.stopCalled, isTrue);
+      expect(stt.finalized, isTrue);
+      expect(stt.acceptedWaveforms, hasLength(1));
+      expect(stt.acceptedWaveforms.first, hasLength(2));
+      expect(path, isNotNull);
+
+      final file = File(path!);
+      expect(await file.exists(), isTrue);
+      final bytes = await file.readAsBytes();
+      expect(bytes.length, equals(48));
+
+      await file.delete();
+      await tempDir.delete(recursive: true);
+    });
+
+    test('stream flushes STT in smaller realtime chunks', () async {
+      final recorder = _FakeRecorderClient(hasPermissionResult: true);
+      final stt = _FakeSttSink();
+      final tempDir = await Directory.systemTemp.createTemp('recording_test_');
+
+      final service = RecordingService(
+        sttService: stt,
+        recorder: recorder,
+        documentsDirectory: () async => tempDir,
+      );
+
+      final started = await service.start();
+      expect(started, isTrue);
+
+      recorder.controller.add(Uint8List(3200));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(stt.acceptedWaveforms, hasLength(1));
+      expect(stt.acceptedWaveforms.first, hasLength(1600));
+
+      final path = await service.stop();
+      expect(path, isNotNull);
+
+      final file = File(path!);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      await tempDir.delete(recursive: true);
+    });
+
+    test('writes a supported sample rate into STT and wav header', () async {
+      final recorder = _FakeRecorderClient(hasPermissionResult: true);
+      final stt = _FakeSttSink();
+      final tempDir = await Directory.systemTemp.createTemp('recording_test_');
+
+      final service = RecordingService(
+        sttService: stt,
+        recorder: recorder,
+        documentsDirectory: () async => tempDir,
+      );
+
+      final started = await service.start();
+      expect(started, isTrue);
+
+      recorder.controller.add(Uint8List(8820));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      recorder.controller.add(Uint8List(8820));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      final path = await service.stop();
+      expect(path, isNotNull);
+      expect(stt.acceptedSampleRates, isNotEmpty);
+      expect(const [8000, 16000, 22050, 32000, 44100, 48000],
+          contains(stt.acceptedSampleRates.last));
+
+      final bytes = await File(path!).readAsBytes();
+      final wavRate = ByteData.sublistView(bytes).getUint32(24, Endian.little);
+      expect(
+          const [8000, 16000, 22050, 32000, 44100, 48000], contains(wavRate));
+
+      final file = File(path);
       if (await file.exists()) {
         await file.delete();
       }

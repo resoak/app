@@ -1,5 +1,7 @@
 /// 轉錄後處理：減輕串流 ASR 常見的「字元打結」、句尾重疊重複送出等問題。
 abstract final class TranscriptPostProcess {
+  static final RegExp _latinPattern = RegExp(r'[A-Za-z]');
+
   /// 正規化空白並套用重複字元壓縮。
   static String normalize(String raw) {
     var s = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
@@ -32,6 +34,10 @@ abstract final class TranscriptPostProcess {
     if (c.isEmpty) return s;
     if (c.endsWith(s)) return null;
 
+    if (_containsLatin(c) || _containsLatin(s)) {
+      return _mergeByWordOverlap(c, s);
+    }
+
     final maxK = s.length < c.length ? s.length : c.length;
     for (var k = maxK; k > 0; k--) {
       if (k > c.length) continue;
@@ -42,6 +48,38 @@ abstract final class TranscriptPostProcess {
       }
     }
     return '$c $s';
+  }
+
+  static bool _containsLatin(String input) => _latinPattern.hasMatch(input);
+
+  static String? _mergeByWordOverlap(String committed, String segment) {
+    final committedWords = committed.split(RegExp(r'\s+'));
+    final segmentWords = segment.split(RegExp(r'\s+'));
+    final maxK = segmentWords.length < committedWords.length
+        ? segmentWords.length
+        : committedWords.length;
+
+    for (var k = maxK; k > 0; k--) {
+      final committedTail = committedWords.sublist(committedWords.length - k);
+      final segmentHead = segmentWords.sublist(0, k);
+      if (_listsEqualIgnoreCase(committedTail, segmentHead)) {
+        final tail = segmentWords.sublist(k).join(' ').trim();
+        if (tail.isEmpty) return null;
+        return '$committed $tail';
+      }
+    }
+
+    return '$committed $segment';
+  }
+
+  static bool _listsEqualIgnoreCase(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].toLowerCase() != b[i].toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// 即時顯示用：committed + 進行中片段，並對整段做輕量正規化。
