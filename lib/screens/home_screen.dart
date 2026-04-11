@@ -2,22 +2,24 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/lecture.dart';
+import '../providers/transcription_provider.dart';
 import '../services/db_service.dart';
 import '../theme/lecture_vault_theme.dart';
 import '../utils/format_utils.dart';
 import 'lecture_detail_screen.dart';
 import 'recording_screen.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   final DbService _dbService = DbService();
   StreamSubscription<void>? _dbChangesSub;
   List<Lecture> _lectures = [];
@@ -353,7 +355,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildLectureCard(Lecture lecture, bool isSelected) {
     final sizeLabel =
         lecture.id != null ? (_fileSizeById[lecture.id!] ?? '—') : '—';
-    final summarized = lecture.summary.trim().isNotEmpty;
+    final transcriptionState = lecture.id == null
+        ? null
+        : ref.watch(
+            transcriptionProvider.select((states) => states[lecture.id!]),
+          );
+    final isTranscribing =
+        transcriptionState?.status == TranscriptionStatus.transcribing;
+    final hasCompletedSummary =
+        lecture.summary.trim().isNotEmpty && lecture.summary.trim() != '背景轉錄中…';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -405,7 +415,37 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: lvMono(10, color: LectureVaultColors.textMuted),
                     ),
                     const Spacer(),
-                    if (summarized)
+                    if (isTranscribing)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: LectureVaultColors.blueElectric
+                              .withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '轉錄中 ${(transcriptionState!.progress * 100).round()}%',
+                          style: lvMono(10,
+                              color: LectureVaultColors.blueElectric),
+                        ),
+                      )
+                    else if (transcriptionState?.status ==
+                        TranscriptionStatus.error)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: LectureVaultColors.stopRed
+                              .withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '轉錄失敗',
+                          style: lvMono(10, color: LectureVaultColors.stopRed),
+                        ),
+                      )
+                    else if (hasCompletedSummary)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
@@ -469,6 +509,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
+                if (isTranscribing) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: transcriptionState!.progress.clamp(0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        LectureVaultColors.blueElectric,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'AI 正在背景轉錄這段錄音',
+                    style: lvMono(11, color: LectureVaultColors.textMuted),
+                  ),
+                ],
                 if (lecture.tag.trim().isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Container(

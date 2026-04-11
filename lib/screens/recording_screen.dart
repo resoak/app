@@ -1,30 +1,28 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/lecture.dart';
-import '../services/background_transcription_service.dart';
+import '../providers/transcription_provider.dart';
 import '../services/db_service.dart';
 import '../services/recording_service.dart';
 
 import '../theme/lecture_vault_theme.dart';
 import '../widgets/recording_waveform.dart';
 
-class RecordingScreen extends StatefulWidget {
+class RecordingScreen extends ConsumerStatefulWidget {
   const RecordingScreen({super.key});
 
   @override
-  State<RecordingScreen> createState() => _RecordingScreenState();
+  ConsumerState<RecordingScreen> createState() => _RecordingScreenState();
 }
 
-class _RecordingScreenState extends State<RecordingScreen>
+class _RecordingScreenState extends ConsumerState<RecordingScreen>
     with SingleTickerProviderStateMixin {
-
   late RecordingService _recordingService;
   final DbService _dbService = DbService();
-  final BackgroundTranscriptionService _backgroundTranscriptionService =
-      BackgroundTranscriptionService();
 
   String _transcript = '';
   String? _startupError;
@@ -33,7 +31,6 @@ class _RecordingScreenState extends State<RecordingScreen>
   late AnimationController _waveCtrl;
   bool _isRecordingActive = false;
   bool _isStopping = false;
-
 
   @override
   void initState() {
@@ -128,7 +125,9 @@ class _RecordingScreenState extends State<RecordingScreen>
       durationSeconds: _seconds,
     );
 
-    unawaited(_backgroundTranscriptionService.transcribeLecture(savedLecture));
+    unawaited(
+      ref.read(transcriptionProvider.notifier).transcribeLecture(savedLecture),
+    );
 
     _isStopping = false;
 

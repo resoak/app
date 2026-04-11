@@ -4,20 +4,23 @@ import 'dart:ui';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/lecture.dart';
+import '../providers/transcription_provider.dart';
 import '../services/db_service.dart';
 import '../theme/lecture_vault_theme.dart';
 
-class LectureDetailScreen extends StatefulWidget {
+class LectureDetailScreen extends ConsumerStatefulWidget {
   final Lecture lecture;
   const LectureDetailScreen({super.key, required this.lecture});
 
   @override
-  State<LectureDetailScreen> createState() => _LectureDetailScreenState();
+  ConsumerState<LectureDetailScreen> createState() =>
+      _LectureDetailScreenState();
 }
 
-class _LectureDetailScreenState extends State<LectureDetailScreen> {
+class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   final DbService _dbService = DbService();
   late AudioPlayer _audioPlayer;
   late Lecture _lecture;
@@ -146,6 +149,11 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final timeline = _buildTimeline();
+    final transcriptionState = _lecture.id == null
+        ? null
+        : ref.watch(
+            transcriptionProvider.select((states) => states[_lecture.id!]),
+          );
 
     return Scaffold(
       backgroundColor: LectureVaultColors.bgDeep,
@@ -176,6 +184,10 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
                 ),
                 const SizedBox(height: 22),
                 _buildPlayerCard(),
+                if (transcriptionState != null) ...[
+                  const SizedBox(height: 18),
+                  _buildTranscriptionProgress(transcriptionState),
+                ],
                 const SizedBox(height: 22),
                 _buildGlassSummary(),
                 const SizedBox(height: 28),
@@ -307,6 +319,62 @@ class _LectureDetailScreenState extends State<LectureDetailScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTranscriptionProgress(TranscriptionState transcriptionState) {
+    final isError = transcriptionState.status == TranscriptionStatus.error;
+    final progress = transcriptionState.progress.clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isError
+            ? LectureVaultColors.stopRed.withValues(alpha: 0.12)
+            : LectureVaultColors.blueElectric.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isError
+              ? LectureVaultColors.stopRed.withValues(alpha: 0.24)
+              : LectureVaultColors.blueElectric.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isError
+                ? '背景轉錄失敗，請稍後再試。'
+                : 'AI 正在背景轉錄 ${(progress * 100).round()}%',
+            style: lvMono(
+              12,
+              color: isError
+                  ? LectureVaultColors.stopRed
+                  : LectureVaultColors.blueElectric,
+              weight: FontWeight.w600,
+            ),
+          ),
+          if (!isError) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 10,
+                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  LectureVaultColors.blueElectric,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '完成後會自動更新摘要、逐字稿與時間軸。',
+              style: lvMono(11, color: LectureVaultColors.textMuted),
+            ),
+          ],
+        ],
       ),
     );
   }
