@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/lecture.dart';
 import '../services/background_transcription_service.dart';
@@ -42,7 +43,10 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
     return {};
   }
 
-  Future<void> transcribeLecture(Lecture lecture) async {
+  Future<void> transcribeLecture(
+    Lecture lecture, {
+    WhisperModel whisperModel = WhisperModel.base,
+  }) async {
     if (lecture.id == null) return;
     final lectureId = lecture.id!;
 
@@ -93,7 +97,10 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
 
     try {
       final service = BackgroundTranscriptionService();
-      await service.transcribeLecture(lecture);
+      await service.transcribeLecture(
+        lecture,
+        whisperModel: whisperModel,
+      );
 
       // Completed
       _timers[lectureId]?.cancel();

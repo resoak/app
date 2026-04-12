@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/lecture.dart';
 import '../providers/transcription_provider.dart';
@@ -13,7 +14,12 @@ import '../theme/lecture_vault_theme.dart';
 import '../widgets/recording_waveform.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
-  const RecordingScreen({super.key});
+  const RecordingScreen({
+    super.key,
+    this.whisperModel = WhisperModel.base,
+  });
+
+  final WhisperModel whisperModel;
 
   @override
   ConsumerState<RecordingScreen> createState() => _RecordingScreenState();
@@ -126,7 +132,10 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
     );
 
     unawaited(
-      ref.read(transcriptionProvider.notifier).transcribeLecture(savedLecture),
+      ref.read(transcriptionProvider.notifier).transcribeLecture(
+            savedLecture,
+            whisperModel: widget.whisperModel,
+          ),
     );
 
     _isStopping = false;

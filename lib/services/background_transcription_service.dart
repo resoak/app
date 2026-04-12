@@ -1,3 +1,5 @@
+import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
+
 import '../models/lecture.dart';
 import '../utils/paragraph_summary.dart';
 import 'db_service.dart';
@@ -9,8 +11,11 @@ class BackgroundTranscriptionService {
 
   final DbService _dbService;
 
-  Future<void> transcribeLecture(Lecture lecture) async {
-    final sttService = SttService();
+  Future<void> transcribeLecture(
+    Lecture lecture, {
+    WhisperModel whisperModel = WhisperModel.base,
+  }) async {
+    final sttService = SttService(whisperModel: whisperModel);
 
     try {
       await sttService.transcribeFile(lecture.audioPath);

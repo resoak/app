@@ -13,8 +13,6 @@ void main() {
     test('初始時 fullTranscript 為空字串', () {
       expect(stt.fullTranscript, equals(''));
     });
-
-
   });
 
   group('SttService resetStream', () {
@@ -36,6 +34,24 @@ void main() {
         equals(WhisperModel.base),
       );
     });
+
+    test('未指定模型時維持 base，指定後使用該模型', () {
+      expect(
+        SttService.resolveWhisperModel(languageCode: 'zh-TW'),
+        equals(WhisperModel.base),
+      );
+      expect(
+        SttService.resolveWhisperModel(
+          preferredModel: WhisperModel.medium,
+          languageCode: 'zh-TW',
+        ),
+        equals(WhisperModel.medium),
+      );
+      expect(
+        SttService(whisperModel: WhisperModel.small).activeWhisperModel,
+        equals(WhisperModel.small),
+      );
+    });
   });
 
   group('SttService transcript persistence', () {
@@ -53,6 +69,4 @@ void main() {
       );
     });
   });
-
-
 }

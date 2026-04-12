@@ -10,13 +10,18 @@ import '../models/lecture.dart';
 import '../utils/transcript_post_process.dart';
 
 class SttService {
-  SttService();
+  SttService({WhisperModel? whisperModel})
+      : _preferredWhisperModel = whisperModel,
+        _activeWhisperModel = whisperModel ?? WhisperModel.base;
 
   final WhisperController _whisperController = WhisperController();
+  final WhisperModel? _preferredWhisperModel;
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
 
-  WhisperModel _activeWhisperModel = WhisperModel.base;
+  WhisperModel _activeWhisperModel;
+  @visibleForTesting
+  WhisperModel get activeWhisperModel => _activeWhisperModel;
 
   String _committedText = '';
   String _lastEmittedText = '';
@@ -39,11 +44,18 @@ class SttService {
   final _transcriptController = StreamController<String>.broadcast();
   Stream<String> get transcriptStream => _transcriptController.stream;
 
-
-
   @visibleForTesting
   static WhisperModel selectWhisperModelForLanguage(String languageCode) {
     return WhisperModel.base;
+  }
+
+  @visibleForTesting
+  static WhisperModel resolveWhisperModel({
+    WhisperModel? preferredModel,
+    String? languageCode,
+  }) {
+    if (preferredModel != null) return preferredModel;
+    return selectWhisperModelForLanguage(languageCode ?? '');
   }
 
   static String _bundledAssetForModel(WhisperModel model) {
@@ -83,8 +95,10 @@ class SttService {
 
   Future<void> initialize() async {
     if (_isInitialized) return;
-    _activeWhisperModel = selectWhisperModelForLanguage(
-        ui.PlatformDispatcher.instance.locale.languageCode);
+    _activeWhisperModel = resolveWhisperModel(
+      preferredModel: _preferredWhisperModel,
+      languageCode: ui.PlatformDispatcher.instance.locale.languageCode,
+    );
     await _ensureModelReady();
     _isInitialized = true;
   }
@@ -136,8 +150,6 @@ class SttService {
       ..addAll(_mapWhisperTimeline(segments));
     _emitIfChanged(text);
   }
-
-
 
   List<LectureTimelineEntry> _mapWhisperTimeline(
     List<WhisperTranscribeSegment> segments,

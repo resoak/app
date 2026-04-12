@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/lecture.dart';
 import '../providers/transcription_provider.dart';
@@ -20,6 +21,11 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  static const List<WhisperModel> _availableWhisperModels = [
+    WhisperModel.base,
+    WhisperModel.small,
+  ];
+
   final DbService _dbService = DbService();
   StreamSubscription<void>? _dbChangesSub;
   List<Lecture> _lectures = [];
@@ -30,6 +36,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _searchQuery = '';
   int _bottomIndex = 0;
   int? _selectedLectureId;
+  WhisperModel _selectedWhisperModel = WhisperModel.base;
 
   List<MapEntry<String, String>> get _filters {
     final tags = _lectures
@@ -118,6 +125,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           .toList();
     }
     return list;
+  }
+
+  String _whisperModelLabel(WhisperModel model) {
+    switch (model) {
+      case WhisperModel.base:
+        return 'BASE';
+      case WhisperModel.small:
+        return 'SMALL';
+      default:
+        return model.name.toUpperCase();
+    }
   }
 
   Future<void> _deleteLecture(Lecture lecture) async {
@@ -228,6 +246,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
           const SizedBox(height: 20),
+          _buildWhisperModelSelector(),
+          const SizedBox(height: 18),
           SizedBox(
             height: 40,
             child: ListView.separated(
@@ -287,6 +307,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           return _buildLectureCard(lecture, isSelected);
                         },
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWhisperModelSelector() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: BoxDecoration(
+        color: LectureVaultColors.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'WHISPER MODEL',
+            style: lvMono(10, color: LectureVaultColors.textMuted),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '新錄音將使用所選模型進行背景轉錄',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.62),
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _availableWhisperModels.map((model) {
+              final isSelected = _selectedWhisperModel == model;
+              return ChoiceChip(
+                label: Text(_whisperModelLabel(model)),
+                selected: isSelected,
+                showCheckmark: false,
+                onSelected: (_) {
+                  setState(() => _selectedWhisperModel = model);
+                },
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                labelStyle: lvMono(
+                  11,
+                  color:
+                      isSelected ? Colors.white : LectureVaultColors.textMuted,
+                  weight: FontWeight.w600,
+                ),
+                selectedColor:
+                    LectureVaultColors.purple.withValues(alpha: 0.36),
+                backgroundColor: Colors.transparent,
+                side: BorderSide(
+                  color: isSelected
+                      ? LectureVaultColors.purpleBright
+                      : Colors.white.withValues(alpha: 0.16),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              );
+            }).toList(growable: false),
           ),
         ],
       ),
@@ -585,7 +669,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onTap: () async {
             final res = await Navigator.push<bool>(
               context,
-              MaterialPageRoute(builder: (_) => const RecordingScreen()),
+              MaterialPageRoute(
+                builder: (_) => RecordingScreen(
+                  whisperModel: _selectedWhisperModel,
+                ),
+              ),
             );
             if (res == true) _refreshData();
           },
