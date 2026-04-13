@@ -4,3 +4,4 @@
 *.yml text eol=lf
 *.md text eol=lf
 *.onnx filter=lfs diff=lfs merge=lfs -text
+assets/models/whisper/*.bin filter=lfs diff=lfs merge=lfs -text
