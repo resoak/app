@@ -7,6 +7,16 @@
         android:icon="@mipmap/ic_launcher"
         android:extractNativeLibs="true">
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.lecturevault.shareprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/lecture_vault_share_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

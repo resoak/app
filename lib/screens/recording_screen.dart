@@ -11,6 +11,7 @@ import '../services/db_service.dart';
 import '../services/recording_service.dart';
 
 import '../theme/lecture_vault_theme.dart';
+import '../widgets/lecture_vault_background.dart';
 import '../widgets/recording_waveform.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
@@ -118,8 +119,11 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
       title: '課程錄音 $dateLabel $timeLabel',
       date: dateLabel,
       audioPath: path,
+      managedAudioPath: _recordingService.lastManagedAudioPath ?? '',
       transcript: '',
-      summary: '背景轉錄中…',
+      summary: '',
+      transcriptionStatus: LectureProcessingStatus.processing,
+      summaryStatus: LectureProcessingStatus.pending,
       durationSeconds: _seconds,
       tag: '一般',
       timeline: const [],
@@ -164,119 +168,127 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LectureVaultColors.bgDeep,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color:
-                        LectureVaultColors.statusGreen.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
+      backgroundColor: Colors.transparent,
+      body: LectureVaultBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
                       color: LectureVaultColors.statusGreen
-                          .withValues(alpha: 0.35),
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: LectureVaultColors.statusGreen
+                            .withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      'SECURE_OFFLINE_RECORDING',
+                      style: lvMono(10, color: LectureVaultColors.statusGreen),
                     ),
                   ),
-                  child: Text(
-                    'SECURE_OFFLINE_RECORDING',
-                    style: lvMono(10, color: LectureVaultColors.statusGreen),
+                ),
+                const SizedBox(height: 36),
+                Text(
+                  _formatHms(_seconds),
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 44,
+                    fontWeight: FontWeight.w300,
+                    color: Colors.white,
+                    letterSpacing: 2,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-              ),
-              const SizedBox(height: 36),
-              Text(
-                _formatHms(_seconds),
-                style: GoogleFonts.jetBrainsMono(
-                  fontSize: 44,
-                  fontWeight: FontWeight.w300,
-                  color: Colors.white,
-                  letterSpacing: 2,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                const SizedBox(height: 14),
+                Text(
+                  'RECORDING AUDIO...',
+                  style: lvMono(11, color: LectureVaultColors.textMuted),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'RECORDING AUDIO...',
-                style: lvMono(11, color: LectureVaultColors.textMuted),
-              ),
-              const SizedBox(height: 28),
-              Expanded(
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: RecordingWaveform(
-                          animation: CurvedAnimation(
-                            parent: _waveCtrl,
-                            curve: Curves.linear,
+                const SizedBox(height: 28),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: _recordingService.inputLevel,
+                            builder: (context, level, child) {
+                              return RecordingWaveform(
+                                animation: CurvedAnimation(
+                                  parent: _waveCtrl,
+                                  curve: Curves.linear,
+                                ),
+                                level: level,
+                              );
+                            },
                           ),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        _transcript.isEmpty ? '等待語音輸入…' : _transcript,
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 13,
-                          height: 1.45,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          _transcript.isEmpty ? '等待語音輸入…' : _transcript,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  children: [
+                    GestureDetector(
+                      onTap: _handleSave,
+                      child: Container(
+                        height: 96,
+                        width: 96,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: LectureVaultColors.stopRed
+                              .withValues(alpha: 0.15),
+                          border: Border.all(
+                            color: LectureVaultColors.stopRed,
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: LectureVaultColors.stopRed
+                                  .withValues(alpha: 0.45),
+                              blurRadius: 28,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.stop_rounded,
+                              color: Colors.white, size: 44),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      _startupError == null ? 'STOP & GENERATE NOTE' : 'CLOSE',
+                      style: lvMono(10, color: LectureVaultColors.textMuted),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              Column(
-                children: [
-                  GestureDetector(
-                    onTap: _handleSave,
-                    child: Container(
-                      height: 96,
-                      width: 96,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color:
-                            LectureVaultColors.stopRed.withValues(alpha: 0.15),
-                        border: Border.all(
-                          color: LectureVaultColors.stopRed,
-                          width: 3,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: LectureVaultColors.stopRed
-                                .withValues(alpha: 0.45),
-                            blurRadius: 28,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.stop_rounded,
-                            color: Colors.white, size: 44),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    _startupError == null ? 'STOP & GENERATE NOTE' : 'CLOSE',
-                    style: lvMono(10, color: LectureVaultColors.textMuted),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 36),
-            ],
+                const SizedBox(height: 36),
+              ],
+            ),
           ),
         ),
       ),

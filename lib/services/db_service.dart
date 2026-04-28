@@ -1,7 +1,10 @@
 // lib/services/db_service.dart
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/lecture.dart';
@@ -9,12 +12,38 @@ import '../models/lecture.dart';
 class DbService {
   static final DbService _instance = DbService._();
   static Database? _db;
-  static const String _dbName = 'lecture_vault.db';
+  static const String databaseName = 'lecture_vault.db';
   final StreamController<void> _changesController =
       StreamController<void>.broadcast();
+  final Future<Directory> Function() _documentsDirectory;
+  final Future<String> Function()? _databasePathResolver;
+  final Random _random;
 
-  DbService._();
-  factory DbService() => _instance;
+  DbService._({
+    Future<Directory> Function()? documentsDirectory,
+    Future<String> Function()? databasePathResolver,
+    Random? random,
+  })  : _documentsDirectory =
+            documentsDirectory ?? getApplicationDocumentsDirectory,
+        _databasePathResolver = databasePathResolver,
+        _random = random ?? Random.secure();
+
+  factory DbService({
+    Future<Directory> Function()? documentsDirectory,
+    Future<String> Function()? databasePathResolver,
+    Random? random,
+  }) {
+    if (documentsDirectory == null &&
+        databasePathResolver == null &&
+        random == null) {
+      return _instance;
+    }
+    return DbService._(
+      documentsDirectory: documentsDirectory,
+      databasePathResolver: databasePathResolver,
+      random: random,
+    );
+  }
 
   Stream<void> get changes => _changesController.stream;
 
@@ -30,24 +59,12 @@ class DbService {
   }
 
   Future<Database> _initDb() async {
-    final dbPath = await getDatabasesPath();
     return openDatabase(
-      join(dbPath, _dbName),
-      version: 3,
+      await getDatabasePath(),
+      version: 4,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE lectures (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            date TEXT NOT NULL,
-            audioPath TEXT NOT NULL,
-            transcript TEXT DEFAULT '',
-            summary TEXT DEFAULT '',
-            durationSeconds INTEGER DEFAULT 0,
-            tag TEXT DEFAULT '',
-            timelineJson TEXT DEFAULT ''
-          )
-        ''');
+        await _createLecturesTable(db);
+        await _createAppSettingsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -60,8 +77,55 @@ class DbService {
             'ALTER TABLE lectures ADD COLUMN timelineJson TEXT DEFAULT ""',
           );
         }
+        if (oldVersion < 4) {
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN uid TEXT NOT NULL DEFAULT ""',
+          );
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN transcriptionStatus TEXT NOT NULL DEFAULT ""',
+          );
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN summaryStatus TEXT NOT NULL DEFAULT ""',
+          );
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN managedAudioPath TEXT DEFAULT ""',
+          );
+          await db.execute(
+            "UPDATE lectures SET uid = 'legacy-' || id WHERE uid = ''",
+          );
+          await _createAppSettingsTable(db);
+        }
       },
     );
+  }
+
+  Future<void> _createLecturesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE lectures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL,
+        title TEXT NOT NULL,
+        date TEXT NOT NULL,
+        audioPath TEXT NOT NULL,
+        managedAudioPath TEXT DEFAULT '',
+        transcript TEXT DEFAULT '',
+        summary TEXT DEFAULT '',
+        transcriptionStatus TEXT NOT NULL DEFAULT 'pending',
+        summaryStatus TEXT NOT NULL DEFAULT 'pending',
+        durationSeconds INTEGER DEFAULT 0,
+        tag TEXT DEFAULT '',
+        timelineJson TEXT DEFAULT ''
+      )
+    ''');
+  }
+
+  Future<void> _createAppSettingsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> close() async {
@@ -69,15 +133,27 @@ class DbService {
     _db = null;
   }
 
+  Future<String> getDatabasePath() async {
+    if (_db != null) {
+      return _db!.path;
+    }
+    if (_databasePathResolver != null) {
+      return _databasePathResolver();
+    }
+    final dbPath = await getDatabasesPath();
+    return join(dbPath, databaseName);
+  }
+
   Future<void> resetForTests() async {
     await close();
     final dbPath = await getDatabasesPath();
-    await deleteDatabase(join(dbPath, _dbName));
+    await deleteDatabase(join(dbPath, databaseName));
   }
 
   Future<int> insertLecture(Lecture lecture) async {
     final database = await db;
-    final id = await database.insert('lectures', lecture.toMap());
+    final lectureToPersist = _prepareLectureForPersistence(lecture);
+    final id = await database.insert('lectures', lectureToPersist.toMap());
     _emitChange();
     return id;
   }
@@ -102,13 +178,55 @@ class DbService {
 
   Future<void> updateLecture(Lecture lecture) async {
     final database = await db;
+    final lectureToPersist = _prepareLectureForPersistence(lecture);
     await database.update(
       'lectures',
-      lecture.toMap(),
+      lectureToPersist.toMap(),
       where: 'id = ?',
       whereArgs: [lecture.id],
     );
     _emitChange();
+  }
+
+  Lecture _prepareLectureForPersistence(Lecture lecture) {
+    if (lecture.uid.trim().isNotEmpty) {
+      return lecture;
+    }
+    return lecture.copyWith(uid: _generateLectureUid());
+  }
+
+  String _generateLectureUid() {
+    final micros = DateTime.now().microsecondsSinceEpoch;
+    final randomPart =
+        _random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0');
+    return 'lec_${micros}_$randomPart';
+  }
+
+  Future<String> resolveAudioPath(Lecture lecture) async {
+    final relativePath = lecture.managedAudioPath.trim();
+    if (relativePath.isEmpty) {
+      return lecture.audioPath;
+    }
+
+    final documentsDirectory = await _documentsDirectory();
+    return normalize(join(documentsDirectory.path, relativePath));
+  }
+
+  Future<File> resolveAudioFile(Lecture lecture) async {
+    return File(await resolveAudioPath(lecture));
+  }
+
+  Future<Directory> getDocumentsDirectory() async {
+    return _documentsDirectory();
+  }
+
+  Future<File> getDatabaseFile() async {
+    return File(await getDatabasePath());
+  }
+
+  Future<Directory> getManagedAudioDirectory() async {
+    final documentsDirectory = await _documentsDirectory();
+    return Directory(join(documentsDirectory.path, 'media', 'audio'));
   }
 
   Future<void> deleteLecture(int id) async {

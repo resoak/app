@@ -1,14 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:record/record.dart';
-
-
 
 abstract class RecorderClient {
   Future<bool> hasPermission();
@@ -35,10 +33,13 @@ class AudioRecorderClient implements RecorderClient {
 
 class RecordingService {
   static const int _defaultSampleRate = 16000;
+  static final String _managedAudioDirectory = p.join('media', 'audio');
   final RecorderClient _recorder;
   final Future<Directory> Function() _documentsDirectory;
+  final ValueNotifier<double> _inputLevel = ValueNotifier<double>(0);
   StreamSubscription? _audioStreamSub;
   String? _lastPath;
+  String? _lastManagedAudioPath;
   RandomAccessFile? _raf;
   int _totalPcmBytes = 0;
   Stopwatch? _streamClock;
@@ -60,18 +61,25 @@ class RecordingService {
     ),
   );
 
+  String? get lastManagedAudioPath => _lastManagedAudioPath;
+  ValueListenable<double> get inputLevel => _inputLevel;
+
   Future<bool> start() async {
     if (!await _recorder.hasPermission()) return false;
 
     final dir = await _documentsDirectory();
-    final path = p.join(
-      dir.path,
+    final managedAudioPath = p.join(
+      _managedAudioDirectory,
       'rec_${DateTime.now().millisecondsSinceEpoch}.wav',
     );
+    final path = p.join(dir.path, managedAudioPath);
     _lastPath = path;
+    _lastManagedAudioPath = managedAudioPath;
     _totalPcmBytes = 0;
+    _publishInputLevel(0);
 
     try {
+      await File(path).parent.create(recursive: true);
       _raf = await File(path).open(mode: FileMode.write);
       _raf!.writeFromSync(_buildWavHeader(0, _defaultSampleRate)); // 佔位 header
       _streamClock = Stopwatch()..start();
@@ -82,8 +90,10 @@ class RecordingService {
         // 同步寫入，避免 async 造成 stop() 時資料遺失
         _raf?.writeFromSync(data);
         _totalPcmBytes += data.length;
+        _updateInputLevel(data);
       }, onError: (Object error, StackTrace stackTrace) {
         debugPrint('RecordingService audio stream error: $error');
+        _publishInputLevel(0);
       });
 
       return true;
@@ -97,6 +107,8 @@ class RecordingService {
         await file.delete();
       }
       _lastPath = null;
+      _lastManagedAudioPath = null;
+      _publishInputLevel(0);
       rethrow;
     }
   }
@@ -105,7 +117,7 @@ class RecordingService {
     await _recorder.stop();
     await _audioStreamSub?.cancel();
     _audioStreamSub = null;
-
+    _publishInputLevel(0);
 
     if (_raf == null || _lastPath == null) return null;
 
@@ -119,6 +131,41 @@ class RecordingService {
     _streamClock = null;
 
     return _lastPath;
+  }
+
+  void _updateInputLevel(Uint8List pcmBytes) {
+    final rawLevel = calculateNormalizedLevel(pcmBytes);
+    final liftedLevel = math.pow(rawLevel, 0.7).toDouble();
+    final currentLevel = _inputLevel.value;
+    final smoothedLevel = liftedLevel > currentLevel
+        ? currentLevel + (liftedLevel - currentLevel) * 0.55
+        : currentLevel * 0.82 + liftedLevel * 0.18;
+    _publishInputLevel(smoothedLevel);
+  }
+
+  void _publishInputLevel(double level) {
+    _inputLevel.value = level.clamp(0.0, 1.0);
+  }
+
+  @visibleForTesting
+  static double calculateNormalizedLevel(Uint8List pcmBytes) {
+    final sampleCount = pcmBytes.length ~/ 2;
+    if (sampleCount == 0) return 0;
+
+    final byteData = ByteData.sublistView(pcmBytes);
+    var sumSquares = 0.0;
+
+    for (var offset = 0; offset + 1 < pcmBytes.length; offset += 2) {
+      final normalizedSample =
+          byteData.getInt16(offset, Endian.little) / 32768.0;
+      sumSquares += normalizedSample * normalizedSample;
+    }
+
+    final rms = math.sqrt(sumSquares / sampleCount);
+    const noiseFloor = 0.015;
+    if (rms <= noiseFloor) return 0;
+
+    return ((rms - noiseFloor) / (1 - noiseFloor)).clamp(0.0, 1.0);
   }
 
   int _estimateSampleRate() {
@@ -168,5 +215,4 @@ class RecordingService {
       buffer.setUint8(offset + i, value.codeUnitAt(i));
     }
   }
-
 }

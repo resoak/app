@@ -39,6 +39,14 @@ class _FakeRecorderClient implements RecorderClient {
   }
 }
 
+Uint8List _pcm16Samples(List<int> samples) {
+  final data = ByteData(samples.length * 2);
+  for (var i = 0; i < samples.length; i++) {
+    data.setInt16(i * 2, samples[i], Endian.little);
+  }
+  return data.buffer.asUint8List();
+}
+
 void main() {
   group('RecordingService', () {
     test('uses mic Android recorder config', () {
@@ -65,6 +73,55 @@ void main() {
       expect(started, isFalse);
       expect(recorder.startCalled, isFalse);
 
+      await tempDir.delete(recursive: true);
+    });
+
+    test('calculates normalized PCM level from wav source stream data', () {
+      expect(
+        RecordingService.calculateNormalizedLevel(_pcm16Samples([0, 0, 0, 0])),
+        0,
+      );
+
+      final quiet = RecordingService.calculateNormalizedLevel(
+        _pcm16Samples([500, -500, 750, -750]),
+      );
+      final loud = RecordingService.calculateNormalizedLevel(
+        _pcm16Samples([12000, -12000, 16000, -16000]),
+      );
+
+      expect(quiet, greaterThan(0));
+      expect(loud, greaterThan(quiet));
+      expect(loud, inInclusiveRange(0, 1));
+    });
+
+    test('publishes live input level from recorded PCM and resets on stop',
+        () async {
+      final recorder = _FakeRecorderClient(hasPermissionResult: true);
+      final tempDir = await Directory.systemTemp.createTemp('recording_test_');
+
+      final service = RecordingService(
+        recorder: recorder,
+        documentsDirectory: () async => tempDir,
+      );
+
+      final started = await service.start();
+      expect(started, isTrue);
+      expect(service.inputLevel.value, 0);
+
+      recorder.controller.add(_pcm16Samples([9000, -9000, 12000, -12000]));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(service.inputLevel.value, greaterThan(0));
+
+      final path = await service.stop();
+
+      expect(path, isNotNull);
+      expect(service.inputLevel.value, 0);
+
+      final file = File(path!);
+      if (await file.exists()) {
+        await file.delete();
+      }
       await tempDir.delete(recursive: true);
     });
 
@@ -101,8 +158,6 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-
-
     test('stop keeps final PCM emitted during recorder stop', () async {
       final recorder = _FakeRecorderClient(
         hasPermissionResult: true,
@@ -133,8 +188,6 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-
-
     test('writes a supported sample rate into wav header', () async {
       final recorder = _FakeRecorderClient(hasPermissionResult: true);
       final tempDir = await Directory.systemTemp.createTemp('recording_test_');
@@ -154,7 +207,6 @@ void main() {
 
       final path = await service.stop();
       expect(path, isNotNull);
-
 
       final bytes = await File(path!).readAsBytes();
       final wavRate = ByteData.sublistView(bytes).getUint32(24, Endian.little);

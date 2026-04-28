@@ -1,17 +1,21 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
+import '../models/app_settings.dart';
 import '../models/lecture.dart';
+import '../providers/app_settings_provider.dart';
 import '../providers/transcription_provider.dart';
+import '../services/audio_import_service.dart';
 import '../services/db_service.dart';
 import '../theme/lecture_vault_theme.dart';
 import '../utils/format_utils.dart';
+import '../widgets/lecture_vault_background.dart';
 import 'lecture_detail_screen.dart';
 import 'recording_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,12 +25,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  static const List<WhisperModel> _availableWhisperModels = [
-    WhisperModel.base,
-    WhisperModel.small,
-  ];
-
   final DbService _dbService = DbService();
+  final AudioImportService _audioImportService = AudioImportService();
   StreamSubscription<void>? _dbChangesSub;
   List<Lecture> _lectures = [];
   final Map<int, String> _fileSizeById = {};
@@ -36,7 +36,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _searchQuery = '';
   int _bottomIndex = 0;
   int? _selectedLectureId;
-  WhisperModel _selectedWhisperModel = WhisperModel.base;
 
   List<MapEntry<String, String>> get _filters {
     final tags = _lectures
@@ -86,8 +85,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final sizes = <int, String>{};
     for (final l in data) {
       if (l.id == null) continue;
-      final f = File(l.audioPath);
       try {
+        final f = await _dbService.resolveAudioFile(l);
         if (await f.exists()) {
           final bytes = await f.length();
           sizes[l.id!] = FormatUtils.formatBytes(bytes);
@@ -166,21 +165,128 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (confirm != true) return;
 
-    final file = File(lecture.audioPath);
+    final file = await _dbService.resolveAudioFile(lecture);
     if (await file.exists()) await file.delete();
 
     await _dbService.deleteLecture(lecture.id!);
     _refreshData();
   }
 
+  Future<void> _openCreateLectureSheet() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: LectureVaultColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.mic_rounded, color: Colors.white),
+                title: Text('開始錄音', style: lvHeading(16)),
+                subtitle: Text(
+                  '建立新的現場錄音並在背景轉錄',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                ),
+                onTap: () => Navigator.pop(context, 'record'),
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.audio_file_rounded, color: Colors.white),
+                title: Text('匯入音檔', style: lvHeading(16)),
+                subtitle: Text(
+                  '複製本機音檔到受管儲存並開始轉錄',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                ),
+                onTap: () => Navigator.pop(context, 'import'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'record') {
+      await _startRecordingLecture();
+      return;
+    }
+    if (action == 'import') {
+      await _importAudioLecture();
+    }
+  }
+
+  Future<void> _startRecordingLecture() async {
+    final selectedWhisperModel =
+        ref.read(appSettingsProvider).asData?.value.preferredWhisperModel ??
+            AppSettings.defaultWhisperModel;
+    final res = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordingScreen(
+          whisperModel: selectedWhisperModel,
+        ),
+      ),
+    );
+    if (res == true) {
+      _refreshData();
+    }
+  }
+
+  Future<void> _importAudioLecture() async {
+    try {
+      final selectedWhisperModel =
+          ref.read(appSettingsProvider).asData?.value.preferredWhisperModel ??
+              AppSettings.defaultWhisperModel;
+      final importedLecture = await _audioImportService.pickAndImportLecture();
+      if (importedLecture == null || !mounted) {
+        return;
+      }
+
+      unawaited(
+        ref.read(transcriptionProvider.notifier).transcribeLecture(
+              importedLecture,
+              whisperModel: selectedWhisperModel,
+            ),
+      );
+
+      _refreshData();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已匯入「${importedLecture.title}」，正在背景轉錄。')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('音檔匯入失敗：$error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedWhisperModel = ref.watch(
+      appSettingsProvider.select(
+        (state) =>
+            state.asData?.value.preferredWhisperModel ??
+            AppSettings.defaultWhisperModel,
+      ),
+    );
+
     return Scaffold(
-      backgroundColor: LectureVaultColors.bgDeep,
+      backgroundColor: Colors.transparent,
       extendBody: true,
-      body: SafeArea(
-        bottom: false,
-        child: _bottomIndex == 0 ? _buildHomeBody() : _buildSearchBody(),
+      body: LectureVaultBackground(
+        child: SafeArea(
+          bottom: false,
+          child: _bottomIndex == 0
+              ? _buildHomeBody(selectedWhisperModel)
+              : _buildSearchBody(),
+        ),
       ),
       floatingActionButton: _buildFab(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
@@ -188,7 +294,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildHomeBody() {
+  Widget _buildHomeBody(WhisperModel selectedWhisperModel) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       child: Column(
@@ -238,7 +344,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: LectureVaultColors.bgCard,
                 ),
                 child: IconButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                  },
                   icon: const Icon(Icons.person_outline_rounded,
                       color: Colors.white),
                 ),
@@ -246,7 +359,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          _buildWhisperModelSelector(),
+          _buildWhisperModelSelector(selectedWhisperModel),
           const SizedBox(height: 18),
           SizedBox(
             height: 40,
@@ -313,7 +426,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildWhisperModelSelector() {
+  Widget _buildWhisperModelSelector(WhisperModel selectedWhisperModel) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -342,14 +455,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: _availableWhisperModels.map((model) {
-              final isSelected = _selectedWhisperModel == model;
+            children: AppSettings.availableWhisperModels.map((model) {
+              final isSelected = selectedWhisperModel == model;
               return ChoiceChip(
                 label: Text(_whisperModelLabel(model)),
                 selected: isSelected,
                 showCheckmark: false,
                 onSelected: (_) {
-                  setState(() => _selectedWhisperModel = model);
+                  ref
+                      .read(appSettingsProvider.notifier)
+                      .updatePreferredWhisperModel(model);
                 },
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 labelStyle: lvMono(
@@ -444,10 +559,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         : ref.watch(
             transcriptionProvider.select((states) => states[lecture.id!]),
           );
+    final effectiveTranscriptionStatus =
+        transcriptionState?.status == TranscriptionStatus.transcribing
+            ? LectureProcessingStatus.processing
+            : transcriptionState?.status == TranscriptionStatus.error
+                ? LectureProcessingStatus.failed
+                : lecture.transcriptionStatus;
     final isTranscribing =
-        transcriptionState?.status == TranscriptionStatus.transcribing;
+        effectiveTranscriptionStatus == LectureProcessingStatus.processing;
     final hasCompletedSummary =
-        lecture.summary.trim().isNotEmpty && lecture.summary.trim() != '背景轉錄中…';
+        lecture.summaryStatus == LectureProcessingStatus.completed &&
+            lecture.summary.trim().isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -514,8 +636,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               color: LectureVaultColors.blueElectric),
                         ),
                       )
-                    else if (transcriptionState?.status ==
-                        TranscriptionStatus.error)
+                    else if (effectiveTranscriptionStatus ==
+                        LectureProcessingStatus.failed)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
@@ -666,17 +788,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () async {
-            final res = await Navigator.push<bool>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => RecordingScreen(
-                  whisperModel: _selectedWhisperModel,
-                ),
-              ),
-            );
-            if (res == true) _refreshData();
-          },
+          onTap: _openCreateLectureSheet,
           child: const Center(
             child: Icon(Icons.add, color: Colors.white, size: 34),
           ),
