@@ -26,14 +26,24 @@ void main() {
 
   group('AudioImportService', () {
     late DbService dbService;
+    late Directory tempDatabaseDir;
 
     setUp(() async {
-      dbService = DbService();
+      tempDatabaseDir =
+          await Directory.systemTemp.createTemp('audio_import_db_test_');
+      final databasePath =
+          '${tempDatabaseDir.path}${Platform.pathSeparator}lecture_vault.db';
+      dbService = DbService(
+        databasePathResolver: () async => databasePath,
+      );
       await dbService.resetForTests();
     });
 
     tearDown(() async {
       await dbService.close();
+      if (await tempDatabaseDir.exists()) {
+        await tempDatabaseDir.delete(recursive: true);
+      }
     });
 
     test('copies imported audio into managed storage and creates lecture row',

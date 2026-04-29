@@ -13,7 +13,7 @@ class BackgroundTranscriptionService {
     SummaryService? summaryService,
     SttServiceFactory? sttServiceFactory,
   })  : _dbService = dbService ?? DbService(),
-        _summaryService = summaryService ?? const LocalSummaryService(),
+        _summaryService = summaryService ?? const MiniLmSummaryService(),
         _sttServiceFactory = sttServiceFactory ??
             ((whisperModel) => SttService(whisperModel: whisperModel));
 
