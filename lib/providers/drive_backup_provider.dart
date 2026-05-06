@@ -51,8 +51,16 @@ class DriveBackupController extends AsyncNotifier<DriveBackupState> {
         } else {
           await _localStore.clearLatestBackupMetadata();
         }
+      } else {
+        latestBackup = null;
+        await _localStore.clearCachedAccount();
+        await _localStore.clearLatestBackupMetadata();
       }
     } catch (error) {
+      account = GoogleDriveAccount.signedOut(userMessage: error.toString());
+      latestBackup = null;
+      await _localStore.clearCachedAccount();
+      await _localStore.clearLatestBackupMetadata();
       lastError = error.toString();
     }
 
@@ -86,9 +94,11 @@ class DriveBackupController extends AsyncNotifier<DriveBackupState> {
     await _runBusy('正在中斷 Google 連結…', () async {
       await _authService.signOut();
       await _localStore.clearCachedAccount();
+      await _localStore.clearLatestBackupMetadata();
       state = AsyncData(
         _current.copyWith(
           account: const GoogleDriveAccount.signedOut(),
+          clearLatestBackup: true,
           clearLastError: true,
         ),
       );
@@ -98,14 +108,23 @@ class DriveBackupController extends AsyncNotifier<DriveBackupState> {
   Future<void> refresh() async {
     await _runBusy('正在讀取 Google Drive 備份狀態…', () async {
       final account = await _authService.inspectAccount();
+      if (!account.isSignedIn) {
+        await _localStore.clearCachedAccount();
+        await _localStore.clearLatestBackupMetadata();
+        state = AsyncData(
+          _current.copyWith(
+            account: const GoogleDriveAccount.signedOut(),
+            clearLatestBackup: true,
+            clearLastError: true,
+          ),
+        );
+        return;
+      }
+
       final metadata = await _backupService.fetchLatestBackupMetadata(
         promptIfNeeded: false,
       );
-      if (account.isSignedIn) {
-        await _localStore.saveCachedAccount(account);
-      } else {
-        await _localStore.clearCachedAccount();
-      }
+      await _localStore.saveCachedAccount(account);
       if (metadata == null) {
         await _localStore.clearLatestBackupMetadata();
       } else {

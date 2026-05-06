@@ -86,7 +86,7 @@ class DriveBackupService {
     final encoder = ZipFileEncoder()..create(archivePath);
 
     var audioFileCount = 0;
-    var totalBytes = dbFile.lengthSync();
+    var totalBytes = await dbFile.length();
 
     await encoder.addFile(dbFile, _databaseEntryPath);
 

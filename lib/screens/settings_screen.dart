@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/app_settings.dart';
 import '../providers/app_settings_provider.dart';
 import '../providers/drive_backup_provider.dart';
+import '../services/background_image_service.dart';
 import '../theme/lecture_vault_theme.dart';
 import '../widgets/lecture_vault_background.dart';
 
@@ -22,9 +24,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _lectureLabelController = TextEditingController();
   final TextEditingController _timelineLabelController =
       TextEditingController();
+  final BackgroundImageService _backgroundImageService =
+      BackgroundImageService();
 
   bool _didHydrateProfile = false;
   bool _isSavingProfile = false;
+  bool _isManagingBackgroundImage = false;
 
   @override
   void dispose() {
@@ -103,6 +108,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
     _showMessage('已加入時間軸標籤');
+  }
+
+  Future<void> _importBackgroundImage() async {
+    if (_isManagingBackgroundImage) {
+      return;
+    }
+
+    setState(() => _isManagingBackgroundImage = true);
+    try {
+      final currentPath = ref
+              .read(appSettingsProvider)
+              .asData
+              ?.value
+              .backgroundImagePath
+              .trim() ??
+          '';
+      final managedRelativePath =
+          await _backgroundImageService.pickAndImportBackgroundImage();
+      if (managedRelativePath == null || managedRelativePath.trim().isEmpty) {
+        return;
+      }
+
+      if (currentPath.isNotEmpty && currentPath != managedRelativePath) {
+        await _backgroundImageService.deleteManagedImage(currentPath);
+      }
+
+      await ref
+          .read(appSettingsProvider.notifier)
+          .updateBackgroundImagePath(managedRelativePath);
+      if (!mounted) {
+        return;
+      }
+      _showMessage('已匯入自訂背景圖片');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage('匯入背景圖片失敗：$error');
+    } finally {
+      if (mounted) {
+        setState(() => _isManagingBackgroundImage = false);
+      }
+    }
+  }
+
+  Future<void> _clearBackgroundImage(AppSettings settings) async {
+    if (_isManagingBackgroundImage ||
+        settings.backgroundImagePath.trim().isEmpty) {
+      return;
+    }
+
+    setState(() => _isManagingBackgroundImage = true);
+    try {
+      await _backgroundImageService
+          .deleteManagedImage(settings.backgroundImagePath);
+      await ref.read(appSettingsProvider.notifier).clearBackgroundImagePath();
+      if (!mounted) {
+        return;
+      }
+      _showMessage('已移除自訂背景圖片');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage('移除背景圖片失敗：$error');
+    } finally {
+      if (mounted) {
+        setState(() => _isManagingBackgroundImage = false);
+      }
+    }
   }
 
   void _showMessage(String message) {
@@ -540,7 +615,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const _SectionHeader(
                           eyebrow: 'BACKGROUND',
                           title: '背景風格',
-                          description: 'Home、錄音與講義詳情頁都會讀這個設定，不影響主要內容排版。',
+                          description:
+                              '可匯入自己的背景圖片；若未設定，Home、錄音與講義詳情頁會回到下方內建風格。',
+                        ),
+                        const SizedBox(height: 16),
+                        _BackgroundImagePanel(
+                          fileLabel: settings.backgroundImagePath.trim().isEmpty
+                              ? '尚未設定自訂背景圖片'
+                              : p.basename(settings.backgroundImagePath),
+                          relativePath: settings.backgroundImagePath,
+                          isBusy: _isManagingBackgroundImage,
+                          onImport: _importBackgroundImage,
+                          onClear: settings.backgroundImagePath.trim().isEmpty
+                              ? null
+                              : () => _clearBackgroundImage(settings),
                         ),
                         const SizedBox(height: 16),
                         ...AppBackgroundStyle.values.map(
@@ -863,6 +951,137 @@ class _EditableLabelSection extends StatelessWidget {
   }
 }
 
+class _BackgroundImagePanel extends StatelessWidget {
+  const _BackgroundImagePanel({
+    required this.fileLabel,
+    required this.relativePath,
+    required this.isBusy,
+    required this.onImport,
+    required this.onClear,
+  });
+
+  final String fileLabel;
+  final String relativePath;
+  final bool isBusy;
+  final VoidCallback onImport;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  gradient: LinearGradient(
+                    colors: [
+                      LectureVaultColors.blueElectric.withValues(alpha: 0.24),
+                      LectureVaultColors.purple.withValues(alpha: 0.24),
+                    ],
+                  ),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                child: const Icon(
+                  Icons.wallpaper_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileLabel,
+                      style: lvHeading(15, weight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '匯入後會套用到主要畫面，系統仍會保留深色覆蓋層，避免文字被背景吃掉。',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.68),
+                        fontSize: 12,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (relativePath.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              relativePath,
+              style: lvMono(10, color: LectureVaultColors.textMuted),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              TextButton.icon(
+                onPressed: isBusy ? null : onImport,
+                icon: Icon(
+                  Icons.upload_file_rounded,
+                  color: isBusy
+                      ? LectureVaultColors.textMuted
+                      : LectureVaultColors.blueElectric,
+                ),
+                label: Text(
+                  isBusy ? '處理中…' : '匯入背景圖片',
+                  style: lvMono(
+                    12,
+                    color: isBusy
+                        ? LectureVaultColors.textMuted
+                        : LectureVaultColors.blueElectric,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: isBusy ? null : onClear,
+                icon: Icon(
+                  Icons.delete_outline_rounded,
+                  color: onClear == null
+                      ? LectureVaultColors.textMuted
+                      : LectureVaultColors.stopRed,
+                ),
+                label: Text(
+                  '清除背景圖',
+                  style: lvMono(
+                    12,
+                    color: onClear == null
+                        ? LectureVaultColors.textMuted
+                        : LectureVaultColors.stopRed,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BackgroundStyleTile extends StatelessWidget {
   const _BackgroundStyleTile({
     required this.style,
@@ -942,31 +1161,15 @@ class _BackgroundPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final decoration = switch (style) {
-      AppBackgroundStyle.darkDefault => BoxDecoration(
-          color: LectureVaultColors.bgDeep,
+      AppBackgroundStyle.black => BoxDecoration(
+          color: Colors.black,
           borderRadius: BorderRadius.circular(16),
         ),
-      AppBackgroundStyle.aurora => BoxDecoration(
+      AppBackgroundStyle.white => BoxDecoration(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [
-              LectureVaultColors.bgDeep,
-              LectureVaultColors.purple.withValues(alpha: 0.7),
-              LectureVaultColors.blueElectric.withValues(alpha: 0.75),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-      AppBackgroundStyle.blueprint => BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF08101F),
-              LectureVaultColors.blueElectric.withValues(alpha: 0.4),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+          border: Border.all(
+            color: Colors.black.withValues(alpha: 0.12),
           ),
         ),
     };
@@ -975,20 +1178,53 @@ class _BackgroundPreview extends StatelessWidget {
       width: 72,
       height: 72,
       decoration: decoration,
-      child: style == AppBackgroundStyle.blueprint
-          ? const CustomPaint(painter: _PreviewGridPainter())
-          : null,
+      child: switch (style) {
+        AppBackgroundStyle.black =>
+          const CustomPaint(painter: _PreviewDarkCorePainter()),
+        AppBackgroundStyle.white => CustomPaint(
+            painter: _PreviewGridPainter(
+              color: Colors.black.withValues(alpha: 0.08),
+            ),
+          ),
+      },
     );
   }
 }
 
+class _PreviewDarkCorePainter extends CustomPainter {
+  const _PreviewDarkCorePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 1;
+    for (double y = 8; y < size.height; y += 14) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y + 16), linePaint);
+    }
+
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = LectureVaultColors.purpleBright.withValues(alpha: 0.22);
+    final center = Offset(size.width * 0.78, size.height * 0.26);
+    canvas.drawCircle(center, 14, ringPaint);
+    canvas.drawCircle(center, 26, ringPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _PreviewGridPainter extends CustomPainter {
-  const _PreviewGridPainter();
+  const _PreviewGridPainter({required this.color});
+
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.16)
+      ..color = color
       ..strokeWidth = 1;
 
     for (double dx = 12; dx < size.width; dx += 12) {
@@ -1000,5 +1236,7 @@ class _PreviewGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _PreviewGridPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
 }

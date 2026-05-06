@@ -30,8 +30,8 @@ class LectureDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
-  static const String _clearSelectionValue =
-      '__lecture_vault_clear_selection__';
+  static final RegExp _summaryBulletPrefixPattern = RegExp(r'^\s*[•●▪◦‣]\s*');
+  static const Duration _positionUiUpdateInterval = Duration(milliseconds: 250);
 
   final DbService _dbService = DbService();
   final LectureShareService _lectureShareService = LectureShareService();
@@ -67,17 +67,22 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     });
 
     _playerSubscriptions.add(_audioPlayer.onPlayerStateChanged.listen((state) {
-      if (mounted) {
-        setState(() => _isPlaying = state == PlayerState.playing);
+      final isPlaying = state == PlayerState.playing;
+      if (mounted && _isPlaying != isPlaying) {
+        setState(() => _isPlaying = isPlaying);
       }
     }));
     _playerSubscriptions.add(_audioPlayer.onDurationChanged.listen((value) {
-      if (mounted) {
+      if (mounted && _duration != value) {
         setState(() => _duration = value);
       }
     }));
     _playerSubscriptions.add(_audioPlayer.onPositionChanged.listen((value) {
-      if (mounted) {
+      final shouldUpdate =
+          (value - _position).abs() >= _positionUiUpdateInterval ||
+              value == Duration.zero ||
+              (_duration > Duration.zero && value >= _duration);
+      if (mounted && shouldUpdate) {
         setState(() => _position = value);
       }
     }));
@@ -85,7 +90,14 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
 
   Future<void> _refreshLecture(int id) async {
     final updated = await _dbService.getLectureById(id);
-    if (!mounted || updated == null) {
+    if (!mounted) {
+      return;
+    }
+    if (updated == null) {
+      await _audioPlayer.stop();
+      if (mounted) {
+        Navigator.of(context).maybePop();
+      }
       return;
     }
     setState(() {
@@ -99,7 +111,13 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
       return;
     }
 
-    final resolvedAudioPath = await _dbService.resolveAudioPath(_lecture);
+    String resolvedAudioPath;
+    try {
+      resolvedAudioPath = await _dbService.resolveSafeAudioPath(_lecture);
+    } catch (_) {
+      _showMessage('這堂課的音檔不在受管儲存區。');
+      return;
+    }
     final file = File(resolvedAudioPath);
     final exists = await file.exists();
 
@@ -177,6 +195,75 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
       return '尚無摘要。';
     }
     return summary;
+  }
+
+  List<String> _summaryKeyPoints() {
+    if (_lecture.summaryStatus == LectureProcessingStatus.processing ||
+        _lecture.summaryStatus == LectureProcessingStatus.failed) {
+      return const [];
+    }
+
+    final summary = _lecture.summary.trim();
+    if (summary.isEmpty) {
+      return const [];
+    }
+
+    final rawLines = summary
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+
+    if (rawLines.isEmpty) {
+      return const [];
+    }
+
+    final keyPoints = <String>[];
+    for (final line in rawLines) {
+      if (!_summaryBulletPrefixPattern.hasMatch(line)) {
+        return const [];
+      }
+
+      final point = line.replaceFirst(_summaryBulletPrefixPattern, '').trim();
+      if (point.isNotEmpty) {
+        keyPoints.add(point);
+      }
+    }
+
+    return keyPoints;
+  }
+
+  Widget _buildSummaryContent() {
+    final keyPoints = _summaryKeyPoints();
+    if (keyPoints.isEmpty) {
+      return Text(
+        _summaryParagraph(),
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.88),
+          fontSize: 14,
+          height: 1.65,
+        ),
+      );
+    }
+
+    return Column(
+      children: List.generate(keyPoints.length, (index) {
+        final point = keyPoints[index];
+        final accentColor = index.isEven
+            ? LectureVaultColors.blueElectric
+            : LectureVaultColors.purpleBright;
+
+        return Padding(
+          padding:
+              EdgeInsets.only(bottom: index == keyPoints.length - 1 ? 0 : 12),
+          child: _SummaryKeyPointCard(
+            index: index,
+            point: point,
+            accentColor: accentColor,
+          ),
+        );
+      }),
+    );
   }
 
   void _showMessage(String message) {
@@ -276,11 +363,11 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     return normalized;
   }
 
-  Future<String?> _showLabelPickerSheet({
+  Future<List<String>?> _showLabelPickerSheet({
     required String title,
     required String description,
     required List<String> labels,
-    required String? currentValue,
+    required List<String> currentValues,
     required String addMorePrompt,
   }) async {
     final normalizedLabels = _normalizeLabels(labels);
@@ -292,134 +379,167 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
       return null;
     }
 
-    return showModalBottomSheet<String>(
+    final selected = Set<String>.from(currentValues.map((v) => v.trim()));
+
+    return showModalBottomSheet<List<String>>(
       context: context,
       backgroundColor: LectureVaultColors.bgCard,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) {
-        final activeValue = currentValue?.trim() ?? '';
-
-        return SafeArea(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 420),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(title, style: lvHeading(20, weight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 13,
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: normalizedLabels
-                        .map(
-                          (label) => ChoiceChip(
-                            label: Text(label),
-                            selected: label == activeValue,
-                            showCheckmark: false,
-                            onSelected: (_) =>
-                                Navigator.pop(sheetContext, label),
-                            labelStyle: lvMono(
-                              11,
-                              color: label == activeValue
-                                  ? Colors.white
-                                  : LectureVaultColors.textMuted,
-                              weight: FontWeight.w600,
-                            ),
-                            selectedColor: LectureVaultColors.purple
-                                .withValues(alpha: 0.34),
-                            backgroundColor: Colors.transparent,
-                            side: BorderSide(
-                              color: label == activeValue
-                                  ? LectureVaultColors.purpleBright
-                                  : Colors.white.withValues(alpha: 0.16),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
-                  const SizedBox(height: 18),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () =>
-                        Navigator.pop(sheetContext, _clearSelectionValue),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.03),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
+        return StatefulBuilder(builder: (context, setSheetState) {
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.75,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.layers_clear_rounded,
-                            color: Colors.white.withValues(alpha: 0.75),
-                            size: 18,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '清除目前標籤',
-                            style: lvMono(11,
-                                color: Colors.white.withValues(alpha: 0.75)),
-                          ),
-                        ],
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(title,
+                            style: lvHeading(20, weight: FontWeight.w700)),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.pop(sheetContext, selected.toList()),
+                          child: Text('完成',
+                              style: lvMono(14,
+                                  color: LectureVaultColors.blueElectric,
+                                  weight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        height: 1.45,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                      _openSettingsScreen();
-                    },
-                    icon: const Icon(
-                      Icons.settings_outlined,
-                      color: LectureVaultColors.blueElectric,
+                    const SizedBox(height: 18),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: normalizedLabels.map((label) {
+                            final isSelected = selected.contains(label);
+                            return FilterChip(
+                              label: Text(label),
+                              selected: isSelected,
+                              showCheckmark: false,
+                              onSelected: (bool value) {
+                                setSheetState(() {
+                                  if (value) {
+                                    selected.add(label);
+                                  } else {
+                                    selected.remove(label);
+                                  }
+                                });
+                              },
+                              labelStyle: lvMono(
+                                11,
+                                color: isSelected
+                                    ? Colors.white
+                                    : LectureVaultColors.textMuted,
+                                weight: FontWeight.w600,
+                              ),
+                              selectedColor: LectureVaultColors.purple
+                                  .withValues(alpha: 0.34),
+                              backgroundColor: Colors.transparent,
+                              side: BorderSide(
+                                color: isSelected
+                                    ? LectureVaultColors.purpleBright
+                                    : Colors.white.withValues(alpha: 0.16),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ),
-                    label: Text(
-                      '管理標籤清單',
-                      style: lvMono(12, color: LectureVaultColors.blueElectric),
+                    const SizedBox(height: 18),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () {
+                        setSheetState(() {
+                          selected.clear();
+                        });
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.03),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.layers_clear_rounded,
+                              color: Colors.white.withValues(alpha: 0.75),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              '清除所有選擇',
+                              style: lvMono(11,
+                                  color: Colors.white.withValues(alpha: 0.75)),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        _openSettingsScreen();
+                      },
+                      icon: const Icon(
+                        Icons.settings_outlined,
+                        color: LectureVaultColors.blueElectric,
+                      ),
+                      label: Text(
+                        '管理標籤清單',
+                        style:
+                            lvMono(12, color: LectureVaultColors.blueElectric),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
+          );
+        });
       },
     );
   }
@@ -427,9 +547,9 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   Future<void> _editLectureLabel(List<String> lectureLabels) async {
     final selection = await _showLabelPickerSheet(
       title: '課程標籤',
-      description: '從設定頁維護的課程標籤清單中選一個套用到這堂課。',
+      description: '從設定頁維護的課程標籤清單中選擇標籤套用到這堂課。',
       labels: lectureLabels,
-      currentValue: _lecture.tag,
+      currentValues: _lecture.tags,
       addMorePrompt: '設定頁目前沒有可用的課程標籤，先到設定裡建立清單後就能回來套用。',
     );
 
@@ -437,14 +557,9 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
       return;
     }
 
-    final nextTag = selection == _clearSelectionValue ? '' : selection.trim();
-    if (nextTag == _lecture.tag.trim()) {
-      return;
-    }
-
     await _persistLecture(
-      _lecture.copyWith(tag: nextTag),
-      successMessage: nextTag.isEmpty ? '已清除課程標籤' : '已更新課程標籤',
+      _lecture.copyWith(tags: selection),
+      successMessage: selection.isEmpty ? '已清除課程標籤' : '已更新課程標籤',
     );
   }
 
@@ -459,9 +574,9 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
 
     final selection = await _showLabelPickerSheet(
       title: '時間軸標籤',
-      description: '替這個時間點套用設定頁維護的時間軸標籤。',
+      description: '替這個時間點套用標籤。',
       labels: timelineLabels,
-      currentValue: entries[index].label,
+      currentValues: entries[index].labels,
       addMorePrompt: '設定頁目前沒有可用的時間軸標籤，先建立清單後就能標記這些段落。',
     );
 
@@ -470,17 +585,14 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     }
 
     final updatedEntries = List<LectureTimelineEntry>.from(entries);
-    if (selection == _clearSelectionValue) {
-      updatedEntries[index] = updatedEntries[index].copyWith(clearLabel: true);
-    } else {
-      updatedEntries[index] =
-          updatedEntries[index].copyWith(label: selection.trim());
-    }
+    updatedEntries[index] = updatedEntries[index].copyWith(
+      labels: selection,
+      clearLabels: selection.isEmpty,
+    );
 
     await _persistLecture(
       _lecture.copyWith(timeline: updatedEntries),
-      successMessage:
-          selection == _clearSelectionValue ? '已清除時間軸標籤' : '已套用時間軸標籤',
+      successMessage: selection.isEmpty ? '已清除時間軸標籤' : '已套用時間軸標籤',
     );
   }
 
@@ -621,7 +733,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildLectureLabelCard(List<String> lectureLabels) {
-    final currentTag = _lecture.tag.trim();
+    final currentTags = _lecture.tags;
     final hasManagedLabels = lectureLabels.isNotEmpty;
 
     return Container(
@@ -639,37 +751,44 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'LECTURE LABEL',
+                  'LECTURE LABELS',
                   style: lvMono(10, color: LectureVaultColors.textMuted),
                 ),
-                const SizedBox(height: 8),
-                if (currentTag.isNotEmpty)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: LectureVaultColors.blueElectric
-                          .withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: LectureVaultColors.blueElectric
-                            .withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Text(
-                      '#$currentTag',
-                      style: lvMono(11, color: LectureVaultColors.blueElectric),
-                    ),
+                const SizedBox(height: 10),
+                if (currentTags.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: currentTags.map((tag) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: LectureVaultColors.blueElectric
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: LectureVaultColors.blueElectric
+                                .withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Text(
+                          '#$tag',
+                          style: lvMono(10,
+                              color: LectureVaultColors.blueElectric),
+                        ),
+                      );
+                    }).toList(),
                   )
                 else
                   Text(
                     '尚未分類',
                     style: lvMono(12, color: LectureVaultColors.textMuted),
                   ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Text(
                   hasManagedLabels
-                      ? '目前可選 ${lectureLabels.length} 個課程標籤。'
+                      ? '目前可選 ${lectureLabels.length} 個標籤，可多選。'
                       : '設定頁目前沒有可用的課程標籤。',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.66),
@@ -821,7 +940,6 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildGlassSummary() {
-    final paragraph = _summaryParagraph();
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
@@ -853,14 +971,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              Text(
-                paragraph,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  fontSize: 14,
-                  height: 1.65,
-                ),
-              ),
+              _buildSummaryContent(),
             ],
           ),
         ),
@@ -951,7 +1062,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
         final dotColor = index.isEven
             ? LectureVaultColors.purpleBright
             : LectureVaultColors.blueElectric;
-        final itemLabel = item.label?.trim() ?? '';
+        final currentEntryLabels = item.labels;
 
         return IntrinsicHeight(
           child: Row(
@@ -1016,25 +1127,24 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                               weight: FontWeight.w600,
                             ),
                           ),
-                          if (itemLabel.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: dotColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: dotColor.withValues(alpha: 0.28),
+                          ...currentEntryLabels.map((l) => Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
                                 ),
-                              ),
-                              child: Text(
-                                itemLabel,
-                                style: lvMono(10,
-                                    color: dotColor, weight: FontWeight.w600),
-                              ),
-                            ),
+                                decoration: BoxDecoration(
+                                  color: dotColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: dotColor.withValues(alpha: 0.28),
+                                  ),
+                                ),
+                                child: Text(
+                                  l,
+                                  style: lvMono(10,
+                                      color: dotColor, weight: FontWeight.w600),
+                                ),
+                              )),
                           ActionChip(
                             onPressed: () =>
                                 _editTimelineLabel(index, timelineLabels),
@@ -1043,7 +1153,8 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                               size: 15,
                               color: Colors.white.withValues(alpha: 0.72),
                             ),
-                            label: Text(itemLabel.isEmpty ? '套用標籤' : '改標籤'),
+                            label: Text(
+                                currentEntryLabels.isEmpty ? '套用標籤' : '編輯標籤'),
                             labelStyle: lvMono(10,
                                 color: Colors.white.withValues(alpha: 0.72)),
                             backgroundColor:
@@ -1113,6 +1224,65 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     }
     _audioPlayer.dispose();
     super.dispose();
+  }
+}
+
+class _SummaryKeyPointCard extends StatelessWidget {
+  const _SummaryKeyPointCard({
+    required this.index,
+    required this.point,
+    required this.accentColor,
+  });
+
+  final int index;
+  final String point;
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accentColor.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: accentColor.withValues(alpha: 0.28)),
+            ),
+            child: Text(
+              '${index + 1}'.padLeft(2, '0'),
+              style: lvMono(
+                9,
+                color: accentColor,
+                weight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              point,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 14,
+                height: 1.55,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

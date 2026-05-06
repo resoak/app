@@ -20,34 +20,36 @@ android {
 
     defaultConfig {
         applicationId = "com.example.lecture_vault"
-        minSdk = 24 
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
-    // 移除之前的 pickFirst，讓單一插件自行運作
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-
     buildTypes {
-        getByName("debug") {
-            // 本機常見 x86_64 AVD；實機為 arm64-v8a。兩者都打包，方便 flutter run。
-            ndk {
-                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
-            }
-        }
-        getByName("release") {
+        release {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             isShrinkResources = false
-            // 上架／實機發佈：只留 ARM64，APK 較小。
-            ndk {
-                abiFilters.add("arm64-v8a")
-            }
+        }
+    }
+
+    packaging {
+        androidResources {
+            noCompress += listOf("bin")
+        }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            // 這是解決 FFmpeg 加載失敗的關鍵：保留所有架構的原生庫
+            useLegacyPackaging = true
+            pickFirsts.add("**/libffmpegkit.so")
+            pickFirsts.add("**/libavcodec.so")
+            pickFirsts.add("**/libavformat.so")
+            pickFirsts.add("**/libavutil.so")
+            pickFirsts.add("**/libswresample.so")
+            pickFirsts.add("**/libswscale.so")
         }
     }
 }

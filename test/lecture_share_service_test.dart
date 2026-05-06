@@ -15,6 +15,8 @@ class _FakeLectureShareGateway implements LectureShareGateway {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('LectureShareService', () {
     late Directory tempDir;
     late DbService dbService;
@@ -53,13 +55,13 @@ void main() {
         transcript: '第一段逐字稿。第二段逐字稿。',
         summary: '整理遞迴、排序與圖論的核心觀念。',
         durationSeconds: 95,
-        tag: '考試',
+        tags: ['考試'],
         timeline: [
           const LectureTimelineEntry(
             text: '老師先回顧遞迴觀念',
             startMs: 15000,
             endMs: 28000,
-            label: '重點',
+            labels: ['重點'],
           ),
         ],
       );

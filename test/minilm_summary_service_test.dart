@@ -66,6 +66,23 @@ void main() {
       expect(summary, startsWith('• '));
       expect(summary, contains('transaction isolation level'));
     });
+
+    test('long punctuationless transcript does not return a verbatim bullet',
+        () async {
+      const service = MiniLmSummaryService(
+        runtime: _ThrowingRuntime(),
+        fallbackService: LocalSummaryService(),
+      );
+
+      const transcript =
+          '今天老師先介紹資料庫正規化與反正規化的取捨接著比較查詢效率與資料一致性之間的平衡然後說明索引設計如何影響寫入成本最後整理專案中常見的資料建模陷阱與除錯方式';
+
+      final summary = await service.summarizeTranscript(transcript);
+
+      expect(summary, startsWith('• '));
+      expect(summary, isNot(equals(transcript)));
+      expect(summary, isNot(equals('• $transcript。')));
+    });
   });
 }
 

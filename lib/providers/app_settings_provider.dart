@@ -3,10 +3,15 @@ import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/app_setting.dart';
 import '../models/app_settings.dart';
+import '../services/db_service.dart';
 import '../services/settings_service.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
+});
+
+final dbServiceProvider = Provider<DbService>((ref) {
+  return DbService();
 });
 
 final appSettingsProvider =
@@ -16,6 +21,7 @@ final appSettingsProvider =
 
 class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
   SettingsService get _settingsService => ref.read(settingsServiceProvider);
+  DbService get _dbService => ref.read(dbServiceProvider);
 
   @override
   Future<AppSettings> build() async {
@@ -46,7 +52,7 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
 
   Future<void> updatePreferredWhisperModel(WhisperModel model) async {
     final nextSettings = _currentSettings.copyWith(
-      preferredWhisperModel: model,
+      preferredWhisperModel: AppSettings.resolveAvailableWhisperModel(model),
     );
     await _persist(nextSettings);
   }
@@ -64,6 +70,22 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
           .where((item) => item != label)
           .toList(growable: false),
     );
+    await _persist(nextSettings);
+  }
+
+  Future<void> updateLectureLabel(String oldLabel, String newLabel) async {
+    final cleanOld = oldLabel.trim();
+    final cleanNew = newLabel.trim();
+    if (cleanOld == cleanNew || cleanNew.isEmpty) return;
+
+    final nextLabels = _currentSettings.lectureLabels.map((l) {
+      return l == cleanOld ? cleanNew : l;
+    }).toList();
+
+    // 更新資料庫中的所有課程標籤
+    await _dbService.updateLectureTag(cleanOld, cleanNew);
+
+    final nextSettings = _currentSettings.copyWith(lectureLabels: nextLabels);
     await _persist(nextSettings);
   }
 
@@ -88,6 +110,18 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     await _persist(nextSettings);
   }
 
+  Future<void> updateBackgroundImagePath(String managedRelativePath) async {
+    final nextSettings = _currentSettings.copyWith(
+      backgroundImagePath: managedRelativePath.trim(),
+    );
+    await _persist(nextSettings);
+  }
+
+  Future<void> clearBackgroundImagePath() async {
+    final nextSettings = _currentSettings.copyWith(backgroundImagePath: '');
+    await _persist(nextSettings);
+  }
+
   Future<void> resetToDefaults() async {
     await _persist(AppSettings.defaults());
   }
@@ -106,6 +140,7 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
         AppSettingsKeys.lectureLabels,
         AppSettingsKeys.timelineLabels,
         AppSettingsKeys.backgroundStyle,
+        AppSettingsKeys.backgroundImagePath,
       ];
 
       for (final key in keysToSync) {

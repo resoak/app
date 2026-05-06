@@ -3,10 +3,12 @@ import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:record/record.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 abstract class RecorderClient {
   Future<bool> hasPermission();
@@ -37,6 +39,7 @@ class RecordingService {
   final RecorderClient _recorder;
   final Future<Directory> Function() _documentsDirectory;
   final ValueNotifier<double> _inputLevel = ValueNotifier<double>(0);
+  final ValueNotifier<Int16List> _pcmBuffer = ValueNotifier<Int16List>(Int16List(0));
   StreamSubscription? _audioStreamSub;
   String? _lastPath;
   String? _lastManagedAudioPath;
@@ -63,6 +66,7 @@ class RecordingService {
 
   String? get lastManagedAudioPath => _lastManagedAudioPath;
   ValueListenable<double> get inputLevel => _inputLevel;
+  ValueListenable<Int16List> get pcmBuffer => _pcmBuffer;
 
   Future<bool> start() async {
     if (!await _recorder.hasPermission()) return false;
@@ -79,6 +83,7 @@ class RecordingService {
     _publishInputLevel(0);
 
     try {
+      await WakelockPlus.enable();
       await File(path).parent.create(recursive: true);
       _raf = await File(path).open(mode: FileMode.write);
       _raf!.writeFromSync(_buildWavHeader(0, _defaultSampleRate)); // 佔位 header
@@ -87,9 +92,22 @@ class RecordingService {
       final stream = await _recorder.startStream(recordingConfig);
 
       _audioStreamSub = stream.listen((data) {
-        // 同步寫入，避免 async 造成 stop() 時資料遺失
+        // 同步寫入
         _raf?.writeFromSync(data);
         _totalPcmBytes += data.length;
+
+        // 使用 ByteData 安全地轉換
+        if (data.length >= 2) {
+          final int len = data.length ~/ 2;
+          final Int16List pcm = Int16List(len);
+          final ByteData bd = ByteData.sublistView(data);
+          for (int i = 0; i < len; i++) {
+            pcm[i] = bd.getInt16(i * 2, Endian.little);
+          }
+          // 強制發布一個新實例，確保 ValueNotifier 觸發通知
+          _pcmBuffer.value = pcm;
+        }
+
         _updateInputLevel(data);
       }, onError: (Object error, StackTrace stackTrace) {
         debugPrint('RecordingService audio stream error: $error');
@@ -114,32 +132,39 @@ class RecordingService {
   }
 
   Future<String?> stop() async {
-    await _recorder.stop();
-    await _audioStreamSub?.cancel();
-    _audioStreamSub = null;
-    _publishInputLevel(0);
+    try {
+      await _recorder.stop();
+      await _audioStreamSub?.cancel();
+      _audioStreamSub = null;
+      _publishInputLevel(0);
 
-    if (_raf == null || _lastPath == null) return null;
+      if (_raf == null || _lastPath == null) return null;
 
-    // 回頭補寫正確的 WAV header
-    final actualSampleRate = _estimateSampleRate();
-    _raf!.setPositionSync(0);
-    _raf!.writeFromSync(_buildWavHeader(_totalPcmBytes, actualSampleRate));
-    await _raf!.close();
-    _raf = null;
-    _streamClock?.stop();
-    _streamClock = null;
+      // 回頭補寫正確的 WAV header
+      final actualSampleRate = _estimateSampleRate();
+      _raf!.setPositionSync(0);
+      _raf!.writeFromSync(_buildWavHeader(_totalPcmBytes, actualSampleRate));
+      await _raf!.close();
+      _raf = null;
+      _streamClock?.stop();
+      _streamClock = null;
 
-    return _lastPath;
+      return _lastPath;
+    } finally {
+      await WakelockPlus.disable();
+    }
   }
 
   void _updateInputLevel(Uint8List pcmBytes) {
     final rawLevel = calculateNormalizedLevel(pcmBytes);
-    final liftedLevel = math.pow(rawLevel, 0.7).toDouble();
+    // 使用較小的次方補償，並大幅降低平滑係數 (從 0.55/0.82 改為更具反應性的數值)
+    final liftedLevel = math.pow(rawLevel, 0.6).toDouble();
     final currentLevel = _inputLevel.value;
+    
+    // 增加「捕捉速度」：聲音變大時幾乎瞬間反應，聲音變小時則輕微留存
     final smoothedLevel = liftedLevel > currentLevel
-        ? currentLevel + (liftedLevel - currentLevel) * 0.55
-        : currentLevel * 0.82 + liftedLevel * 0.18;
+        ? currentLevel + (liftedLevel - currentLevel) * 0.8  // 快速上升
+        : currentLevel * 0.6 + liftedLevel * 0.4;           // 快速回落
     _publishInputLevel(smoothedLevel);
   }
 

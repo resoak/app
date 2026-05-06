@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 
 import '../models/drive_backup_metadata.dart';
@@ -30,75 +32,133 @@ class GoogleDriveBackupService implements DriveBackupGateway {
   final DbService _dbService;
 
   @override
-  Future<DriveBackupMetadata?> fetchLatestBackupMetadata({bool promptIfNeeded = false}) async {
-    final client = await _authClient.getAuthenticatedClient(promptIfNeeded: promptIfNeeded);
-    final api = drive.DriveApi(client);
-    final metadataFile = await _findBackupFile(api, DriveBackupMetadata.metadataFileNameDefault);
-    if (metadataFile == null) {
-      return null;
-    }
+  Future<DriveBackupMetadata?> fetchLatestBackupMetadata(
+      {bool promptIfNeeded = false}) async {
+    return _runWithRetry(() async {
+      final client = await _authClient.getAuthenticatedClient(
+          promptIfNeeded: promptIfNeeded);
+      final api = drive.DriveApi(client);
+      final metadataFile = await _findBackupFile(
+          api, DriveBackupMetadata.metadataFileNameDefault);
+      if (metadataFile == null) {
+        return null;
+      }
 
-    final rawContent = await _downloadText(api, metadataFile.id!);
-    final metadata = DriveBackupMetadata.decode(rawContent);
-    final archiveFile = await _findBackupFile(api, DriveBackupMetadata.archiveFileNameDefault);
-    return metadata.copyWith(
-      archiveFileId: archiveFile?.id ?? metadata.archiveFileId,
-      archiveFileName: archiveFile?.name ?? metadata.archiveFileName,
-    );
+      final rawContent = await _downloadText(api, metadataFile.id!);
+      final metadata = DriveBackupMetadata.decode(rawContent);
+      final archiveFile = await _findBackupFile(
+          api, DriveBackupMetadata.archiveFileNameDefault);
+      return metadata.copyWith(
+        archiveFileId: archiveFile?.id ?? metadata.archiveFileId,
+        archiveFileName: archiveFile?.name ?? metadata.archiveFileName,
+      );
+    });
   }
 
   @override
   Future<DriveBackupMetadata> uploadLatestBackup() async {
-    final client = await _authClient.getAuthenticatedClient(promptIfNeeded: true);
-    final api = drive.DriveApi(client);
     final bundle = await _archiveService.createBackupArchive();
 
-    final archiveFile = await _createOrUpdateFile(
-      api: api,
-      name: DriveBackupMetadata.archiveFileNameDefault,
-      mimeType: 'application/zip',
-      bytes: bundle.bytes,
-    );
+    return _runWithRetry(() async {
+      final client =
+          await _authClient.getAuthenticatedClient(promptIfNeeded: true);
+      final api = drive.DriveApi(client);
 
-    final metadata = bundle.metadata.copyWith(
-      archiveFileId: archiveFile.id,
-      archiveFileName: archiveFile.name ?? DriveBackupMetadata.archiveFileNameDefault,
-    );
+      final archiveFile = await _createOrUpdateFile(
+        api: api,
+        name: DriveBackupMetadata.archiveFileNameDefault,
+        mimeType: 'application/zip',
+        bytes: bundle.bytes,
+      );
 
-    await _createOrUpdateFile(
-      api: api,
-      name: DriveBackupMetadata.metadataFileNameDefault,
-      mimeType: 'application/json',
-      bytes: Uint8List.fromList(utf8.encode(metadata.encode())),
-    );
+      final metadata = bundle.metadata.copyWith(
+        archiveFileId: archiveFile.id,
+        archiveFileName:
+            archiveFile.name ?? DriveBackupMetadata.archiveFileNameDefault,
+      );
 
-    return metadata;
+      await _createOrUpdateFile(
+        api: api,
+        name: DriveBackupMetadata.metadataFileNameDefault,
+        mimeType: 'application/json',
+        bytes: Uint8List.fromList(utf8.encode(metadata.encode())),
+      );
+
+      return metadata;
+    });
   }
 
   @override
   Future<DriveBackupMetadata> restoreLatestBackup() async {
-    final client = await _authClient.getAuthenticatedClient(promptIfNeeded: true);
-    final api = drive.DriveApi(client);
+    return _runWithRetry(() async {
+      final client =
+          await _authClient.getAuthenticatedClient(promptIfNeeded: true);
+      final api = drive.DriveApi(client);
 
-    final metadata = await fetchLatestBackupMetadata(promptIfNeeded: true);
-    final archiveFile = metadata?.archiveFileId == null
-        ? await _findBackupFile(api, DriveBackupMetadata.archiveFileNameDefault)
-        : await api.files.get(
-            metadata!.archiveFileId!,
-            $fields: 'id,name,modifiedTime,size',
-          ) as drive.File;
+      final metadata = await fetchLatestBackupMetadata(promptIfNeeded: true);
+      final archiveFile = metadata?.archiveFileId == null
+          ? await _findBackupFile(
+              api, DriveBackupMetadata.archiveFileNameDefault)
+          : await api.files.get(
+              metadata!.archiveFileId!,
+              $fields: 'id,name,modifiedTime,size',
+            ) as drive.File;
 
-    if (archiveFile == null || archiveFile.id == null) {
-      throw const DriveBackupException('Google Drive 上找不到可還原的備份檔。');
+      if (archiveFile == null || archiveFile.id == null) {
+        throw const DriveBackupException('Google Drive 上找不到可還原的備份檔。');
+      }
+
+      final archiveBytes = await _downloadBytes(api, archiveFile.id!);
+      await _dbService.close();
+      final restoredMetadata =
+          await _archiveService.restoreBackupArchive(archiveBytes);
+      _dbService.notifyExternalDataMutation();
+      return restoredMetadata.copyWith(
+        archiveFileId: archiveFile.id,
+        archiveFileName:
+            archiveFile.name ?? DriveBackupMetadata.archiveFileNameDefault,
+      );
+    });
+  }
+
+  Future<T> _runWithRetry<T>(Future<T> Function() action,
+      {int maxRetries = 3}) async {
+    int attempts = 0;
+    while (true) {
+      try {
+        attempts++;
+        return await action();
+      } catch (e) {
+        final isLastAttempt = attempts >= maxRetries;
+        final retryable = _isRetryable(e);
+        
+        // 加入日誌以便在模擬高延遲或不穩定網路時觀察行為
+        debugPrint('DriveBackupService: 嘗試第 $attempts 次失敗。可重試: $retryable, 錯誤: $e');
+        
+        if (isLastAttempt || !retryable) {
+          rethrow;
+        }
+        
+        // 指數退避策略：2s, 4s, 8s...
+        final delaySeconds = math.pow(2, attempts).toInt();
+        debugPrint('DriveBackupService: 將在 $delaySeconds 秒後進行下一次嘗試...');
+        await Future.delayed(Duration(seconds: delaySeconds));
+      }
     }
+  }
 
-    final archiveBytes = await _downloadBytes(api, archiveFile.id!);
-    await _dbService.close();
-    final restoredMetadata = await _archiveService.restoreBackupArchive(archiveBytes);
-    return restoredMetadata.copyWith(
-      archiveFileId: archiveFile.id,
-      archiveFileName: archiveFile.name ?? DriveBackupMetadata.archiveFileNameDefault,
-    );
+  bool _isRetryable(Object e) {
+    if (e is DriveBackupException) {
+      // 網路連線錯誤通常是可重試的
+      return e.userMessage.contains('網路') || e.userMessage.contains('連線');
+    }
+    final msg = e.toString().toLowerCase();
+    return msg.contains('network') ||
+        msg.contains('timeout') ||
+        msg.contains('connection') ||
+        msg.contains('500') ||
+        msg.contains('503') ||
+        msg.contains('504');
   }
 
   Future<drive.File> _createOrUpdateFile({
@@ -108,28 +168,34 @@ class GoogleDriveBackupService implements DriveBackupGateway {
     required Uint8List bytes,
   }) async {
     final existing = await _findBackupFile(api, name);
-    final file = drive.File()
+    
+    // 建立基礎的 metadata，不要在此處設定 parents
+    final fileMetadata = drive.File()
       ..name = name
-      ..parents = const ['appDataFolder']
       ..mimeType = mimeType
       ..appProperties = {
         'logicalKey': 'latestBackup',
         'backupFormatVersion':
             '${DriveBackupMetadata.currentBackupFormatVersion}',
       };
-    final media = drive.Media(Stream<List<int>>.value(bytes), bytes.length, contentType: mimeType);
+      
+    final media = drive.Media(Stream<List<int>>.value(bytes), bytes.length,
+        contentType: mimeType);
 
     if (existing?.id != null) {
+      // 更新現有檔案：Google Drive API v3 不允許在 update 請求的 metadata 中包含 parents
       return await api.files.update(
-        file,
+        fileMetadata,
         existing!.id!,
         uploadMedia: media,
         $fields: 'id,name,modifiedTime,size',
       );
     }
 
+    // 建立新檔案：必須指定 parents 為 appDataFolder
+    fileMetadata.parents = const ['appDataFolder'];
     return await api.files.create(
-      file,
+      fileMetadata,
       uploadMedia: media,
       $fields: 'id,name,modifiedTime,size',
     );
@@ -150,8 +216,10 @@ class GoogleDriveBackupService implements DriveBackupGateway {
     }
 
     files.sort((left, right) {
-      final leftTime = left.modifiedTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final rightTime = right.modifiedTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final leftTime =
+          left.modifiedTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final rightTime =
+          right.modifiedTime ?? DateTime.fromMillisecondsSinceEpoch(0);
       return rightTime.compareTo(leftTime);
     });
     return files.first;

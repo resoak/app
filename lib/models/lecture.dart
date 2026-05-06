@@ -28,8 +28,9 @@ class Lecture {
   final LectureProcessingStatus transcriptionStatus;
   final LectureProcessingStatus summaryStatus;
   final int durationSeconds;
-  final String tag;
   final List<LectureTimelineEntry> timeline;
+  final List<String> tags;
+  final List<double>? embedding;
 
   Lecture({
     this.id,
@@ -43,8 +44,9 @@ class Lecture {
     this.transcriptionStatus = LectureProcessingStatus.pending,
     this.summaryStatus = LectureProcessingStatus.pending,
     this.durationSeconds = 0,
-    this.tag = '一般',
+    this.tags = const ['一般'],
     this.timeline = const [],
+    this.embedding,
   });
 
   Lecture copyWith({
@@ -59,8 +61,9 @@ class Lecture {
     LectureProcessingStatus? transcriptionStatus,
     LectureProcessingStatus? summaryStatus,
     int? durationSeconds,
-    String? tag,
+    List<String>? tags,
     List<LectureTimelineEntry>? timeline,
+    List<double>? embedding,
   }) {
     return Lecture(
       id: id ?? this.id,
@@ -74,8 +77,9 @@ class Lecture {
       transcriptionStatus: transcriptionStatus ?? this.transcriptionStatus,
       summaryStatus: summaryStatus ?? this.summaryStatus,
       durationSeconds: durationSeconds ?? this.durationSeconds,
-      tag: tag ?? this.tag,
+      tags: tags ?? this.tags,
       timeline: timeline ?? this.timeline,
+      embedding: embedding ?? this.embedding,
     );
   }
 
@@ -92,13 +96,17 @@ class Lecture {
       'transcriptionStatus': transcriptionStatus.dbValue,
       'summaryStatus': summaryStatus.dbValue,
       'durationSeconds': durationSeconds,
-      'tag': tag,
+      'tagsJson': jsonEncode(tags),
       'timelineJson':
           jsonEncode(timeline.map((entry) => entry.toMap()).toList()),
+      'embeddingJson': embedding != null ? jsonEncode(embedding) : null,
     };
   }
 
-  factory Lecture.fromMap(Map<String, dynamic> map) {
+  factory Lecture.fromMap(
+    Map<String, dynamic> map, {
+    bool includeEmbedding = true,
+  }) {
     final transcript = map['transcript'] as String? ?? '';
     final summary = map['summary'] as String? ?? '';
 
@@ -114,9 +122,49 @@ class Lecture {
       transcriptionStatus: _parseTranscriptionStatus(map, transcript, summary),
       summaryStatus: _parseSummaryStatus(map, transcript, summary),
       durationSeconds: map['durationSeconds'] ?? 0,
-      tag: map['tag'] ?? '一般',
+      tags: _parseTags(map),
       timeline: _parseTimeline(map['timelineJson']),
+      embedding:
+          includeEmbedding ? parseEmbeddingJson(map['embeddingJson']) : null,
     );
+  }
+
+  static List<double>? parseEmbeddingJson(dynamic raw) {
+    if (raw is! String || raw.trim().isEmpty) return null;
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+
+      final embedding = <double>[];
+      for (final value in decoded) {
+        if (value is! num) return null;
+        embedding.add(value.toDouble());
+      }
+      return embedding;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<String> _parseTags(Map<String, dynamic> map) {
+    final tagsJson = map['tagsJson'] as String?;
+    if (tagsJson != null && tagsJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(tagsJson);
+        if (decoded is List) {
+          return decoded.whereType<String>().toList();
+        }
+      } catch (_) {}
+    }
+
+    // Fallback to legacy 'tag' column
+    final legacyTag = map['tag'] as String?;
+    if (legacyTag != null && legacyTag.trim().isNotEmpty) {
+      return [legacyTag.trim()];
+    }
+
+    return const ['一般'];
   }
 
   static String _parseUid(Map<String, dynamic> map) {
@@ -212,29 +260,29 @@ class LectureTimelineEntry {
     required this.text,
     required this.startMs,
     required this.endMs,
-    this.label,
+    this.labels = const [],
     this.isEstimated = false,
   });
 
   final String text;
   final int startMs;
   final int endMs;
-  final String? label;
+  final List<String> labels;
   final bool isEstimated;
 
   LectureTimelineEntry copyWith({
     String? text,
     int? startMs,
     int? endMs,
-    String? label,
-    bool clearLabel = false,
+    List<String>? labels,
+    bool clearLabels = false,
     bool? isEstimated,
   }) {
     return LectureTimelineEntry(
       text: text ?? this.text,
       startMs: startMs ?? this.startMs,
       endMs: endMs ?? this.endMs,
-      label: clearLabel ? null : (label ?? this.label),
+      labels: clearLabels ? const [] : (labels ?? this.labels),
       isEstimated: isEstimated ?? this.isEstimated,
     );
   }
@@ -244,7 +292,7 @@ class LectureTimelineEntry {
       'text': text,
       'startMs': startMs,
       'endMs': endMs,
-      if (label != null) 'label': label,
+      'labels': labels,
       'isEstimated': isEstimated,
     };
   }
@@ -254,8 +302,21 @@ class LectureTimelineEntry {
       text: map['text'] as String? ?? '',
       startMs: (map['startMs'] as num?)?.toInt() ?? 0,
       endMs: (map['endMs'] as num?)?.toInt() ?? 0,
-      label: map['label'] as String?,
+      labels: _parseTimelineLabels(map),
       isEstimated: map['isEstimated'] as bool? ?? false,
     );
+  }
+
+  static List<String> _parseTimelineLabels(Map<String, dynamic> map) {
+    final rawLabels = map['labels'];
+    if (rawLabels is List) {
+      return rawLabels.whereType<String>().toList();
+    }
+    // Fallback for legacy single label
+    final legacyLabel = map['label'] as String?;
+    if (legacyLabel != null && legacyLabel.trim().isNotEmpty) {
+      return [legacyLabel.trim()];
+    }
+    return const [];
   }
 }

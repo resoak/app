@@ -43,7 +43,7 @@ void main() {
           managedAudioPath: 'media/audio/test.wav',
           transcript: '逐字稿',
           summary: '摘要',
-          tag: '一般',
+          tags: ['一般'],
         ),
       );
 

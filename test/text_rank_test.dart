@@ -40,6 +40,35 @@ void main() {
           TextRank.splitSentences('Flutter is a UI framework. 它可以跨平台開發應用程式。');
       expect(result.length, greaterThan(0));
     });
+
+    test('長篇無標點中文會切成多個摘要候選片段', () {
+      const transcript =
+          '今天老師先講快取記憶體的設計原理接著分析命中率如何影響整體效能然後比較直接對映與組合對映的取捨最後再說明寫回策略與一致性問題'
+          '並且補充實務上如何觀察瓶頸與調整參數讓系統更穩定';
+
+      final result = TextRank.splitSentences(transcript);
+
+      expect(result.length, greaterThanOrEqualTo(2));
+      expect(result.every((segment) => segment.length >= 6), isTrue);
+    });
+
+    test('長篇無標點英文會依空白切成多個摘要候選片段', () {
+      const transcript =
+          'today the lecture explains cache memory design principles and then compares mapping strategies for direct mapped cache and set associative cache '
+          'while also discussing write back policy cache coherence debugging steps and practical tuning ideas for performance bottlenecks in production systems';
+
+      final result = TextRank.splitSentences(transcript);
+
+      expect(result.length, greaterThanOrEqualTo(2));
+      expect(result.join(' '), contains('cache memory design principles'));
+    });
+
+    test('短篇無標點內容仍保留單一片段', () {
+      final result = TextRank.splitSentences('今天講述分頁機制與快取');
+
+      expect(result, hasLength(1));
+      expect(result.single, '今天講述分頁機制與快取');
+    });
   });
 
   group('TextRank.extractKeyPoints()', () {

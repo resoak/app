@@ -37,5 +37,17 @@ void main() {
       expect(lines.every((line) => line.startsWith('• ')), isTrue);
       expect(summary, contains('二元搜尋樹'));
     });
+
+    test('long punctuationless transcript does not fall back to raw transcript',
+        () async {
+      const transcript =
+          '今天老師先介紹資料庫交易隔離層級接著比較read committed與repeatable read的差異然後說明phantom read為什麼會造成查詢結果不一致最後整理實務上如何依照商業需求選擇正確層級並觀察系統效能';
+
+      final summary = await service.summarizeTranscript(transcript);
+
+      expect(summary, startsWith('• '));
+      expect(summary, isNot(equals(transcript)));
+      expect(summary, isNot(equals('• $transcript。')));
+    });
   });
 }

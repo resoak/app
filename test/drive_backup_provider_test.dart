@@ -40,13 +40,18 @@ class _FakeDriveBackupLocalStore implements DriveBackupLocalStore {
 }
 
 class _FakeGoogleDriveAuthClient implements GoogleDriveAuthClient {
-  _FakeGoogleDriveAuthClient({required this.account});
+  _FakeGoogleDriveAuthClient({required this.account, this.inspectError});
 
   GoogleDriveAccount account;
+  Object? inspectError;
 
   @override
-  Future<GoogleDriveAccount> inspectAccount({bool trySilent = true}) async =>
-      account;
+  Future<GoogleDriveAccount> inspectAccount({bool trySilent = true}) async {
+    if (inspectError != null) {
+      throw inspectError!;
+    }
+    return account;
+  }
 
   @override
   Future<GoogleDriveAccount> signIn() async {
@@ -74,12 +79,14 @@ class _FakeDriveBackupGateway implements DriveBackupGateway {
   _FakeDriveBackupGateway({this.latestBackup});
 
   DriveBackupMetadata? latestBackup;
+  var fetchCount = 0;
   var uploadCount = 0;
   var restoreCount = 0;
 
   @override
   Future<DriveBackupMetadata?> fetchLatestBackupMetadata(
       {bool promptIfNeeded = false}) async {
+    fetchCount += 1;
     return latestBackup;
   }
 
@@ -174,6 +181,179 @@ void main() {
       expect(metadata.backupId, 'backup-2');
       expect(state.latestBackup?.backupId, 'backup-2');
       expect(backupGateway.uploadCount, 1);
+    });
+
+    test('build clears cached backup state when account is signed out',
+        () async {
+      final localStore = _FakeDriveBackupLocalStore()
+        ..account = const GoogleDriveAccount(
+          isSignedIn: true,
+          email: 'cached@example.com',
+          displayName: 'Cached User',
+        )
+        ..latestBackup = DriveBackupMetadata(
+          backupId: 'cached-backup',
+          createdAt: DateTime.utc(2026, 4, 25, 17),
+          backupFormatVersion: 1,
+          databaseFileCount: 1,
+          audioFileCount: 1,
+          totalBytes: 512,
+        );
+      final authClient = _FakeGoogleDriveAuthClient(
+        account: const GoogleDriveAccount.signedOut(),
+      );
+      final backupGateway = _FakeDriveBackupGateway(
+        latestBackup: localStore.latestBackup,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          driveBackupLocalStoreProvider.overrideWithValue(localStore),
+          googleDriveAuthProvider.overrideWithValue(authClient),
+          driveBackupServiceProvider.overrideWithValue(backupGateway),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await container.read(driveBackupControllerProvider.future);
+
+      expect(state.account.isSignedIn, isFalse);
+      expect(state.latestBackup, isNull);
+      expect(localStore.account, isNull);
+      expect(localStore.latestBackup, isNull);
+      expect(backupGateway.fetchCount, 0);
+    });
+
+    test('refresh signed out clears cached state without fetching metadata',
+        () async {
+      final localStore = _FakeDriveBackupLocalStore()
+        ..account = const GoogleDriveAccount(
+          isSignedIn: true,
+          email: 'student@example.com',
+          displayName: 'Student',
+        )
+        ..latestBackup = DriveBackupMetadata(
+          backupId: 'backup-3',
+          createdAt: DateTime.utc(2026, 4, 25, 18),
+          backupFormatVersion: 1,
+          databaseFileCount: 1,
+          audioFileCount: 1,
+          totalBytes: 1024,
+        );
+      final authClient = _FakeGoogleDriveAuthClient(
+        account: const GoogleDriveAccount(
+          isSignedIn: true,
+          email: 'student@example.com',
+          displayName: 'Student',
+        ),
+      );
+      final backupGateway = _FakeDriveBackupGateway(
+        latestBackup: localStore.latestBackup,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          driveBackupLocalStoreProvider.overrideWithValue(localStore),
+          googleDriveAuthProvider.overrideWithValue(authClient),
+          driveBackupServiceProvider.overrideWithValue(backupGateway),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(driveBackupControllerProvider.future);
+      expect(backupGateway.fetchCount, 1);
+
+      authClient.account = const GoogleDriveAccount.signedOut();
+      backupGateway.fetchCount = 0;
+
+      await container.read(driveBackupControllerProvider.notifier).refresh();
+      final state = container.read(driveBackupControllerProvider).requireValue;
+
+      expect(state.account.isSignedIn, isFalse);
+      expect(state.latestBackup, isNull);
+      expect(localStore.account, isNull);
+      expect(localStore.latestBackup, isNull);
+      expect(backupGateway.fetchCount, 0);
+    });
+
+    test('signOut clears cached account and latest backup state', () async {
+      final localStore = _FakeDriveBackupLocalStore();
+      final latestBackup = DriveBackupMetadata(
+        backupId: 'backup-4',
+        createdAt: DateTime.utc(2026, 4, 25, 19),
+        backupFormatVersion: 1,
+        databaseFileCount: 1,
+        audioFileCount: 1,
+        totalBytes: 1024,
+      );
+      final authClient = _FakeGoogleDriveAuthClient(
+        account: const GoogleDriveAccount(
+          isSignedIn: true,
+          email: 'student@example.com',
+          displayName: 'Student',
+        ),
+      );
+      final backupGateway = _FakeDriveBackupGateway(latestBackup: latestBackup);
+
+      final container = ProviderContainer(
+        overrides: [
+          driveBackupLocalStoreProvider.overrideWithValue(localStore),
+          googleDriveAuthProvider.overrideWithValue(authClient),
+          driveBackupServiceProvider.overrideWithValue(backupGateway),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(driveBackupControllerProvider.future);
+
+      await container.read(driveBackupControllerProvider.notifier).signOut();
+      final state = container.read(driveBackupControllerProvider).requireValue;
+
+      expect(state.account.isSignedIn, isFalse);
+      expect(state.latestBackup, isNull);
+      expect(localStore.account, isNull);
+      expect(localStore.latestBackup, isNull);
+    });
+
+    test('build clears stale cached state when inspectAccount throws',
+        () async {
+      final localStore = _FakeDriveBackupLocalStore()
+        ..account = const GoogleDriveAccount(
+          isSignedIn: true,
+          email: 'cached@example.com',
+          displayName: 'Cached User',
+        )
+        ..latestBackup = DriveBackupMetadata(
+          backupId: 'cached-backup-error',
+          createdAt: DateTime.utc(2026, 4, 25, 20),
+          backupFormatVersion: 1,
+          databaseFileCount: 1,
+          audioFileCount: 1,
+          totalBytes: 256,
+        );
+      final authClient = _FakeGoogleDriveAuthClient(
+        account: const GoogleDriveAccount.signedOut(),
+        inspectError: const DriveBackupException('silent auth failed'),
+      );
+      final backupGateway = _FakeDriveBackupGateway(
+        latestBackup: localStore.latestBackup,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          driveBackupLocalStoreProvider.overrideWithValue(localStore),
+          googleDriveAuthProvider.overrideWithValue(authClient),
+          driveBackupServiceProvider.overrideWithValue(backupGateway),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await container.read(driveBackupControllerProvider.future);
+
+      expect(state.account.isSignedIn, isFalse);
+      expect(state.latestBackup, isNull);
+      expect(state.lastError, contains('silent auth failed'));
+      expect(localStore.account, isNull);
+      expect(localStore.latestBackup, isNull);
+      expect(backupGateway.fetchCount, 0);
     });
   });
 }

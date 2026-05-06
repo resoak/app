@@ -1,9 +1,18 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/lecture.dart';
 import '../services/background_transcription_service.dart';
+import '../services/summary_service.dart';
+import 'drive_backup_provider.dart';
+
+typedef BackgroundLectureTranscriber = Future<void> Function(
+  Lecture lecture, {
+  WhisperModel whisperModel,
+});
 
 enum TranscriptionStatus { transcribing, completed, error }
 
@@ -27,18 +36,50 @@ class TranscriptionState {
   }
 }
 
+final backgroundLectureTranscriberProvider =
+    Provider<BackgroundLectureTranscriber>((ref) {
+  return (lecture, {whisperModel = WhisperModel.base}) async {
+    return BackgroundTranscriptionService(
+      summaryService: const MiniLmSummaryService(),
+    ).transcribeLecture(
+      lecture,
+      whisperModel: whisperModel,
+    );
+  };
+});
+
+final transcriptionCleanupDelayProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 2);
+});
+
+const _progressUpdateInterval = Duration(milliseconds: 250);
+
 class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
-  final Map<int, Timer> _timers = {};
+  final Map<int, Timer> _progressTimers = {};
+  final Map<int, Timer> _cleanupTimers = {};
   bool _disposed = false;
+  int _activeTranscriptionCount = 0;
+
+  BackgroundLectureTranscriber get _transcriber =>
+      ref.read(backgroundLectureTranscriberProvider);
+
+  Duration get _cleanupDelay => ref.read(transcriptionCleanupDelayProvider);
 
   @override
   Map<int, TranscriptionState> build() {
     ref.onDispose(() {
       _disposed = true;
-      for (final timer in _timers.values) {
+      for (final timer in _progressTimers.values) {
         timer.cancel();
       }
-      _timers.clear();
+      for (final timer in _cleanupTimers.values) {
+        timer.cancel();
+      }
+      _progressTimers.clear();
+      _cleanupTimers.clear();
+      if (_activeTranscriptionCount > 0) {
+        WakelockPlus.disable();
+      }
     });
     return {};
   }
@@ -50,6 +91,8 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
     if (lecture.id == null) return;
     final lectureId = lecture.id!;
 
+    _cleanupTimers.remove(lectureId)?.cancel();
+
     // Initialize state
     state = {
       ...state,
@@ -57,17 +100,22 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
           status: TranscriptionStatus.transcribing, progress: 0.0),
     };
 
-    // Calculate estimated total ticks
-    // Assuming 10 ticks per second (every 100ms)
+    _activeTranscriptionCount++;
+    if (_activeTranscriptionCount == 1) {
+      WakelockPlus.enable();
+    }
+
+    // Calculate estimated total ticks.
     // Assuming processing takes roughly 50% of the audio duration
     final estimatedDurationMs =
         (lecture.durationSeconds * 0.5 * 1000).clamp(2000, 300000);
-    final totalTicks = estimatedDurationMs ~/ 100;
+    final totalTicks =
+        estimatedDurationMs ~/ _progressUpdateInterval.inMilliseconds;
     int currentTick = 0;
 
-    _timers[lectureId]?.cancel();
-    _timers[lectureId] =
-        Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    _progressTimers[lectureId]?.cancel();
+    _progressTimers[lectureId] =
+        Timer.periodic(_progressUpdateInterval, (timer) {
       if (_disposed) {
         timer.cancel();
         return;
@@ -96,15 +144,14 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
     });
 
     try {
-      final service = BackgroundTranscriptionService();
-      await service.transcribeLecture(
+      await _transcriber(
         lecture,
         whisperModel: whisperModel,
       );
 
       // Completed
-      _timers[lectureId]?.cancel();
-      _timers.remove(lectureId);
+      _progressTimers[lectureId]?.cancel();
+      _progressTimers.remove(lectureId);
 
       if (!_disposed) {
         state = {
@@ -114,17 +161,27 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
         };
 
         // Remove from state after a brief delay so UI can show 100% momentarily
-        Future.delayed(const Duration(seconds: 2), () {
+        _cleanupTimers[lectureId]?.cancel();
+        _cleanupTimers[lectureId] = Timer(_cleanupDelay, () {
+          _cleanupTimers.remove(lectureId);
           if (!_disposed) {
+            final currentState = state[lectureId];
+            if (currentState?.status != TranscriptionStatus.completed) {
+              return;
+            }
             final nextState = Map<int, TranscriptionState>.from(state);
             nextState.remove(lectureId);
             state = nextState;
+
+            // 轉錄與摘要完成後，嘗試觸發 Google Drive 備份
+            _triggerAutoBackup();
           }
         });
       }
-    } catch (_) {
-      _timers[lectureId]?.cancel();
-      _timers.remove(lectureId);
+    } catch (e) {
+      debugPrint('Transcription error for lecture $lectureId: $e');
+      _progressTimers[lectureId]?.cancel();
+      _progressTimers.remove(lectureId);
       if (!_disposed) {
         state = {
           ...state,
@@ -132,6 +189,29 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
               status: TranscriptionStatus.error, progress: 0.0),
         };
       }
+    } finally {
+      _activeTranscriptionCount--;
+      if (_activeTranscriptionCount <= 0) {
+        _activeTranscriptionCount = 0;
+        WakelockPlus.disable();
+      }
+    }
+  }
+
+  void _triggerAutoBackup() {
+    final backupController = ref.read(driveBackupControllerProvider.notifier);
+    final backupState = ref.read(driveBackupControllerProvider);
+
+    // 只有在使用者已登入 Google Drive 的情況下才自動備份
+    if (backupState.asData?.value.account.isSignedIn == true) {
+      debugPrint('Triggering auto backup after transcription...');
+      unawaited(() async {
+        try {
+          await backupController.createBackup();
+        } catch (e) {
+          debugPrint('Auto backup failed: $e');
+        }
+      }());
     }
   }
 }

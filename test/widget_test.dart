@@ -27,7 +27,6 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('BASE'), findsOneWidget);
     expect(find.text('SMALL'), findsOneWidget);
-    expect(find.text('MEDIUM'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.byType(LectureVaultApp), findsOneWidget);

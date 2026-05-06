@@ -1,18 +1,16 @@
 import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-
 import '../models/lecture.dart';
 import '../utils/format_utils.dart';
 import 'db_service.dart';
 
+typedef TemporaryDirectoryProvider = Future<Directory> Function();
+
 class LectureShareException implements Exception {
   const LectureShareException(this.message);
-
   final String message;
-
   @override
   String toString() => message;
 }
@@ -23,7 +21,6 @@ class LectureSharePayload {
     required this.text,
     required this.filePaths,
   });
-
   final String subject;
   final String text;
   final List<String> filePaths;
@@ -43,7 +40,6 @@ abstract class LectureShareGateway {
 
 class MethodChannelLectureShareGateway implements LectureShareGateway {
   static const MethodChannel _channel = MethodChannel('lecture_vault/share');
-
   @override
   Future<void> share(LectureSharePayload payload) async {
     try {
@@ -51,9 +47,7 @@ class MethodChannelLectureShareGateway implements LectureShareGateway {
     } on MissingPluginException {
       throw const LectureShareException('此裝置目前不支援系統分享。');
     } on PlatformException catch (error) {
-      throw LectureShareException(
-        error.message ?? '無法開啟分享面板，請稍後再試。',
-      );
+      throw LectureShareException(error.message ?? '無法開啟分享面板。');
     }
   }
 }
@@ -62,14 +56,14 @@ class LectureShareService {
   LectureShareService({
     DbService? dbService,
     LectureShareGateway? gateway,
-    Future<Directory> Function()? temporaryDirectory,
+    TemporaryDirectoryProvider? temporaryDirectory,
   })  : _dbService = dbService ?? DbService(),
         _gateway = gateway ?? MethodChannelLectureShareGateway(),
         _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
 
   final DbService _dbService;
   final LectureShareGateway _gateway;
-  final Future<Directory> Function() _temporaryDirectory;
+  final TemporaryDirectoryProvider _temporaryDirectory;
 
   Future<void> shareLectureBundle(Lecture lecture) async {
     final payload = await buildSharePayload(
@@ -94,118 +88,122 @@ class LectureShareService {
     required bool includeAudio,
     required bool includeNotes,
   }) async {
-    if (!includeAudio && !includeNotes) {
-      throw const LectureShareException('請至少選擇一種匯出內容。');
-    }
-
     final filePaths = <String>[];
+    final cacheDir = await _temporaryDirectory();
 
     if (includeAudio) {
-      final audioFile = await _dbService.resolveAudioFile(lecture);
+      final audioFile = await _dbService.resolveSafeAudioFile(lecture);
       if (!await audioFile.exists()) {
-        throw const LectureShareException('找不到這堂課的音檔，無法分享。');
+        throw const LectureShareException('找不到這堂課的音檔，無法建立分享包。');
       }
-      filePaths.add(audioFile.path);
+
+      // 強制將音檔複製到 Cache 目錄，避免 FileProvider 權限問題。
+      final tempAudioPath = p.join(
+        cacheDir.path,
+        'share_${p.basename(audioFile.path)}',
+      );
+      final tempFile = await audioFile.copy(tempAudioPath);
+      filePaths.add(tempFile.path);
     }
 
     if (includeNotes) {
-      final exportFile = await _writeNotesExport(lecture);
-      filePaths.add(exportFile.path);
-    }
-
-    if (filePaths.isEmpty) {
-      throw const LectureShareException('沒有可匯出的內容。');
+      final notesFile = File(
+        p.join(cacheDir.path, '${_sanitizeFileName(lecture.title)}_notes.txt'),
+      );
+      await notesFile.writeAsString(_buildNotesDocument(lecture));
+      filePaths.add(notesFile.path);
     }
 
     return LectureSharePayload(
-      subject: lecture.title.trim().isEmpty ? 'LectureVault 匯出' : lecture.title,
-      text: _buildShareMessage(lecture, includeAudio: includeAudio),
-      filePaths: List.unmodifiable(filePaths),
+      subject: lecture.title.isEmpty ? 'LectureVault 匯出' : lecture.title,
+      text: _buildShareMessage(
+        lecture,
+        includeAudio: includeAudio,
+        includeNotes: includeNotes,
+      ),
+      filePaths: filePaths,
     );
   }
 
-  Future<File> _writeNotesExport(Lecture lecture) async {
-    final directory = await _temporaryDirectory();
-    await directory.create(recursive: true);
-
-    final safeStem = _sanitizeFileName(lecture.title);
-    final file = File(
-      p.join(directory.path,
-          '${safeStem.isEmpty ? 'lecture_vault' : safeStem}_notes.txt'),
-    );
-
-    await file.writeAsString(_buildNotesDocument(lecture));
-    return file;
-  }
-
-  String _buildShareMessage(Lecture lecture, {required bool includeAudio}) {
-    final summary = lecture.summary.trim();
-    final label = lecture.tag.trim();
-    final parts = <String>[
-      lecture.title.trim().isEmpty ? 'LectureVault 匯出' : lecture.title.trim(),
-      if (label.isNotEmpty) '標籤：$label',
-      if (summary.isNotEmpty) summary,
-      if (summary.isEmpty && lecture.transcript.trim().isNotEmpty)
-        '已附上逐字稿與摘要文字檔。',
-      if (includeAudio) '含原始音檔。',
+  String _buildShareMessage(
+    Lecture lecture, {
+    required bool includeAudio,
+    required bool includeNotes,
+  }) {
+    final lines = <String>[
+      lecture.title.isEmpty ? 'LectureVault 匯出' : lecture.title,
     ];
-    return parts.join('\n');
+    final summary = lecture.summary.trim();
+    if (summary.isNotEmpty) {
+      lines.add(summary);
+    }
+    if (includeAudio) {
+      lines.add('含原始音檔。');
+    }
+    if (includeNotes) {
+      lines.add('已附上逐字稿與摘要文字檔。');
+    }
+    return lines.join('\n');
   }
 
   String _buildNotesDocument(Lecture lecture) {
     final buffer = StringBuffer()
-      ..writeln(
-          lecture.title.trim().isEmpty ? 'LectureVault 匯出' : lecture.title)
-      ..writeln(
-          '日期：${lecture.date.trim().isEmpty ? '未提供' : lecture.date.trim()}')
-      ..writeln('時長：${FormatUtils.formatDuration(lecture.durationSeconds)}');
+      ..writeln(lecture.title.isEmpty ? '未命名課程' : lecture.title)
+      ..writeln()
+      ..writeln('日期：${lecture.date}');
 
-    if (lecture.tag.trim().isNotEmpty) {
-      buffer.writeln('課程標籤：${lecture.tag.trim()}');
+    if (lecture.durationSeconds > 0) {
+      buffer
+          .writeln('長度：${FormatUtils.formatDuration(lecture.durationSeconds)}');
+    }
+    final tags =
+        lecture.tags.map((tag) => tag.trim()).where((tag) => tag.isNotEmpty);
+    if (tags.isNotEmpty) {
+      buffer.writeln('課程標籤：${tags.join('、')}');
+    }
+
+    if (lecture.timeline.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('【時間軸】');
+      for (final entry in lecture.timeline) {
+        final labels = entry.labels
+            .map((label) => label.trim())
+            .where((label) => label.isNotEmpty)
+            .join('、');
+        final labelText = labels.isEmpty ? '' : ' [$labels]';
+        buffer.writeln(
+          '${_formatTimelineTimestamp(entry.startMs)}$labelText ${entry.text}',
+        );
+      }
     }
 
     buffer
       ..writeln()
       ..writeln('【摘要】')
       ..writeln(
-          lecture.summary.trim().isEmpty ? '尚無摘要。' : lecture.summary.trim())
-      ..writeln();
-
-    if (lecture.timeline.isNotEmpty) {
-      buffer.writeln('【時間軸】');
-      for (final entry in lecture.timeline) {
-        final timestamp = _formatTimelineTime(entry.startMs);
-        final label = entry.label == null || entry.label!.trim().isEmpty
-            ? ''
-            : ' [${entry.label!.trim()}]';
-        buffer.writeln('- $timestamp$label ${entry.text.trim()}');
-      }
-      buffer.writeln();
-    }
-
-    buffer
+          lecture.summary.trim().isEmpty ? '（無摘要）' : lecture.summary.trim())
+      ..writeln()
       ..writeln('【逐字稿】')
-      ..writeln(lecture.transcript.trim().isEmpty
-          ? '尚無逐字稿。'
+      ..write(lecture.transcript.trim().isEmpty
+          ? '（無逐字稿）'
           : lecture.transcript.trim());
 
-    return buffer.toString().trimRight();
+    return buffer.toString();
   }
 
-  String _formatTimelineTime(int startMs) {
-    final totalSeconds = (startMs / 1000).floor();
-    final h = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
-    final m = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final s = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$h:$m:$s';
+  String _formatTimelineTimestamp(int milliseconds) {
+    final totalSeconds = milliseconds ~/ 1000;
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${hours.toString().padLeft(2, '0')}:'
+        '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
   }
 
   String _sanitizeFileName(String raw) {
-    return raw
-        .trim()
-        .replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .replaceAll(RegExp(r'^_+|_+$'), '');
+    final sanitized = raw.replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_').trim();
+    return sanitized.isEmpty ? 'lecture_vault' : sanitized;
   }
 }

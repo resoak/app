@@ -1,46 +1,108 @@
 import 'dart:math' as math;
-
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-
+import 'package:flutter/foundation.dart';
 import '../theme/lecture_vault_theme.dart';
 
-/// Vertical bar waveform driven by an [AnimationController] (repeat).
-class RecordingWaveform extends StatelessWidget {
+class RecordingWaveform extends StatefulWidget {
   const RecordingWaveform({
     super.key,
-    required this.animation,
     required this.level,
-    this.barCount = 48,
+    required this.pcmData,
+    this.barCount = 42,
     this.maxHeight = 120,
+    required this.animation,
   });
 
-  final Animation<double> animation;
   final double level;
+  final ValueListenable<Int16List> pcmData; // 使用基類，解決類型錯誤
   final int barCount;
   final double maxHeight;
+  final Animation<double> animation;
+
+  @override
+  State<RecordingWaveform> createState() => _RecordingWaveformState();
+}
+
+class _RecordingWaveformState extends State<RecordingWaveform> {
+  late List<double> _amplitudes;
+  double _rollingMax = 0.1;
+
+  @override
+  void initState() {
+    super.initState();
+    _amplitudes = List.filled(widget.barCount, 0.05);
+  }
+
+  void _updateAmplitudes(Int16List data) {
+    if (data.isEmpty) {
+      // 如果沒有數據，維持微弱的隨機背景律動，看起來更生動
+      for (int i = 0; i < widget.barCount; i++) {
+        _amplitudes[i] = _amplitudes[i] * 0.9 + (math.Random().nextDouble() * 0.02 + 0.01) * 0.1;
+      }
+      return;
+    }
+    
+    final int samplesPerBar = (data.length / widget.barCount).floor();
+    if (samplesPerBar <= 0) return;
+
+    double currentFrameMax = 0.0;
+    final List<double> frameAverages = List.filled(widget.barCount, 0.0);
+
+    for (int i = 0; i < widget.barCount; i++) {
+      int start = i * samplesPerBar;
+      double sum = 0;
+      int count = 0;
+      for (int j = 0; j < samplesPerBar; j++) {
+        if (start + j < data.length) {
+          double sample = data[start + j] / 32768.0;
+          sum += sample.abs();
+          count++;
+        }
+      }
+      
+      double avg = count > 0 ? sum / count : 0;
+      frameAverages[i] = avg;
+      if (avg > currentFrameMax) currentFrameMax = avg;
+    }
+
+    // 動態增益補償：記錄滾動最大值，緩慢衰減
+    if (currentFrameMax > _rollingMax) {
+      _rollingMax = currentFrameMax;
+    } else {
+      _rollingMax = _rollingMax * 0.995 + currentFrameMax * 0.005;
+    }
+    // 確保 rollingMax 不會過小導致雜訊放大
+    double effectiveMax = math.max(_rollingMax, 0.05);
+
+    for (int i = 0; i < widget.barCount; i++) {
+      // 增加中心頻段（通常是人聲所在）的權重
+      double centerDist = (i - widget.barCount / 2).abs() / (widget.barCount / 2);
+      double frequencyWeight = 1.0 + (1.0 - centerDist) * 0.3;
+      
+      // 使用動態增益：將平均值對比滾動最大值進行縮放
+      double target = (frameAverages[i] / effectiveMax * frequencyWeight).clamp(0.01, 1.0);
+
+      // 物理動力學優化：上升極快(0.9)，下降緩衝(0.15)
+      if (target > _amplitudes[i]) {
+        _amplitudes[i] = _amplitudes[i] * 0.1 + target * 0.9;
+      } else {
+        _amplitudes[i] = _amplitudes[i] * 0.85 + target * 0.15;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 320.0;
-        return SizedBox(
-          height: maxHeight + 24,
-          width: width,
-          child: AnimatedBuilder(
-            animation: animation,
-            builder: (context, child) {
-              return CustomPaint(
-                painter: _WavePainter(
-                  t: animation.value,
-                  level: level,
-                  barCount: barCount,
-                  maxHeight: maxHeight,
-                ),
-                size: Size(width, maxHeight + 24),
-              );
-            },
+    return ValueListenableBuilder<Int16List>(
+      valueListenable: widget.pcmData,
+      builder: (context, data, _) {
+        _updateAmplitudes(data);
+        return CustomPaint(
+          size: Size(double.infinity, widget.maxHeight + 20),
+          painter: _EqualizerPainter(
+            amplitudes: List.from(_amplitudes),
+            maxHeight: widget.maxHeight,
           ),
         );
       },
@@ -48,67 +110,43 @@ class RecordingWaveform extends StatelessWidget {
   }
 }
 
-class _WavePainter extends CustomPainter {
-  _WavePainter({
-    required this.t,
-    required this.level,
-    required this.barCount,
-    required this.maxHeight,
-  });
-
-  final double t;
-  final double level;
-  final int barCount;
+class _EqualizerPainter extends CustomPainter {
+  _EqualizerPainter({required this.amplitudes, required this.maxHeight});
+  final List<double> amplitudes;
   final double maxHeight;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final gap = w / barCount;
-    final barW = math.max(2.0, gap * 0.45);
-    final clampedLevel = level.clamp(0.0, 1.0);
-    const minBarHeight = 10.0;
-    final levelEnergy = 0.14 + clampedLevel * 0.86;
-    final centerIndex = (barCount - 1) / 2;
+    final double spacing = size.width / amplitudes.length;
+    final double barWidth = spacing * 0.7;
+    final double midY = size.height / 2;
 
-    for (var i = 0; i < barCount; i++) {
-      final x = i * gap + (gap - barW) / 2;
-      final phase = (i / barCount) * math.pi * 2 + t * math.pi * 2;
-      final pulse = math.sin(phase) * 0.5 + 0.5;
-      final distanceFromCenter =
-          ((i - centerIndex).abs() / math.max(centerIndex, 1)).clamp(0.0, 1.0);
-      final centerWeight = 1 - math.pow(distanceFromCenter, 1.4);
-      final envelope = (0.22 + centerWeight * 0.78) * levelEnergy;
-      final shimmer = 0.72 + pulse * 0.28;
-      final normalizedHeight = (envelope * shimmer).clamp(0.0, 1.0);
-      final h2 = minBarHeight + normalizedHeight * (maxHeight - minBarHeight);
-      final top = (h - h2) / 2;
+    for (int i = 0; i < amplitudes.length; i++) {
+      final double x = i * spacing + (spacing - barWidth) / 2;
+      // 使用非線性曲線 (power 0.7) 讓低能量時的跳動更明顯
+      final double magnitude = math.pow(amplitudes[i], 0.7).toDouble();
+      final double h = (magnitude * maxHeight).clamp(8.0, maxHeight);
+      final double top = midY - h / 2;
 
       final paint = Paint()
         ..shader = LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
           colors: [
-            LectureVaultColors.blueElectric.withValues(alpha: 0.85),
-            LectureVaultColors.purpleBright.withValues(alpha: 0.95),
+            LectureVaultColors.blueElectric,
+            LectureVaultColors.purpleBright,
+            if (magnitude > 0.8) Colors.white else LectureVaultColors.purpleBright,
           ],
-        ).createShader(Rect.fromLTWH(x, top, barW, h2))
+        ).createShader(Rect.fromLTWH(x, top, barWidth, h))
         ..style = PaintingStyle.fill;
 
-      final r = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, top, barW, h2),
-        const Radius.circular(6),
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(x, top, barWidth, h), const Radius.circular(3)),
+        paint,
       );
-      canvas.drawRRect(r, paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _WavePainter oldDelegate) {
-    return oldDelegate.t != t ||
-        oldDelegate.level != level ||
-        oldDelegate.barCount != barCount ||
-        oldDelegate.maxHeight != maxHeight;
-  }
+  bool shouldRepaint(covariant _EqualizerPainter oldDelegate) => true;
 }

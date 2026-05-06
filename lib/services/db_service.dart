@@ -13,6 +13,22 @@ class DbService {
   static final DbService _instance = DbService._();
   static Database? _db;
   static const String databaseName = 'lecture_vault.db';
+  static const List<String> _lectureColumnsWithoutEmbedding = [
+    'id',
+    'uid',
+    'title',
+    'date',
+    'audioPath',
+    'managedAudioPath',
+    'transcript',
+    'summary',
+    'transcriptionStatus',
+    'summaryStatus',
+    'durationSeconds',
+    'tag',
+    'tagsJson',
+    'timelineJson',
+  ];
   final StreamController<void> _changesController =
       StreamController<void>.broadcast();
   final Future<Directory> Function() _documentsDirectory;
@@ -61,9 +77,10 @@ class DbService {
   Future<Database> _initDb() async {
     return openDatabase(
       await getDatabasePath(),
-      version: 4,
+      version: 7,
       onCreate: (db, version) async {
         await _createLecturesTable(db);
+        await _createLectureIndexes(db);
         await _createAppSettingsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -95,6 +112,19 @@ class DbService {
           );
           await _createAppSettingsTable(db);
         }
+        if (oldVersion < 5) {
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN tagsJson TEXT DEFAULT ""',
+          );
+        }
+        if (oldVersion < 6) {
+          await db.execute(
+            'ALTER TABLE lectures ADD COLUMN embeddingJson TEXT',
+          );
+        }
+        if (oldVersion < 7) {
+          await _createLectureIndexes(db);
+        }
       },
     );
   }
@@ -114,7 +144,9 @@ class DbService {
         summaryStatus TEXT NOT NULL DEFAULT 'pending',
         durationSeconds INTEGER DEFAULT 0,
         tag TEXT DEFAULT '',
-        timelineJson TEXT DEFAULT ''
+        tagsJson TEXT DEFAULT '',
+        timelineJson TEXT DEFAULT '',
+        embeddingJson TEXT
       )
     ''');
   }
@@ -126,6 +158,15 @@ class DbService {
         value TEXT NOT NULL
       )
     ''');
+  }
+
+  Future<void> _createLectureIndexes(Database db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_lectures_date_desc ON lectures(date DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_lectures_managed_audio_path ON lectures(managedAudioPath)',
+    );
   }
 
   Future<void> close() async {
@@ -158,10 +199,69 @@ class DbService {
     return id;
   }
 
-  Future<List<Lecture>> getAllLectures() async {
+  Future<List<Lecture>> getAllLectures({bool includeEmbeddings = true}) async {
     final database = await db;
-    final maps = await database.query('lectures', orderBy: 'date DESC');
-    return maps.map((m) => Lecture.fromMap(m)).toList();
+    final maps = await database.query(
+      'lectures',
+      columns: includeEmbeddings ? null : _lectureColumnsWithoutEmbedding,
+      orderBy: 'date DESC',
+    );
+    return maps
+        .map((m) => Lecture.fromMap(m, includeEmbedding: includeEmbeddings))
+        .toList();
+  }
+
+  /// 語義搜尋：計算相似度並排序
+  Future<List<Lecture>> searchLecturesBySimilarity(
+    List<double> queryVector, {
+    double threshold = 0.3,
+  }) async {
+    if (queryVector.isEmpty) return const [];
+
+    final database = await db;
+    final maps = await database.query(
+      'lectures',
+      where: "embeddingJson IS NOT NULL AND TRIM(embeddingJson) <> ''",
+    );
+    final results = <MapEntry<Lecture, double>>[];
+
+    for (final map in maps) {
+      final emb = Lecture.parseEmbeddingJson(map['embeddingJson']);
+      if (emb == null || emb.length != queryVector.length) continue;
+
+      // 計算點積 (Cosine Similarity，因為我們儲存的是單位向量)
+      double score = 0.0;
+      for (int i = 0; i < queryVector.length; i++) {
+        score += queryVector[i] * emb[i];
+      }
+
+      if (score >= threshold) {
+        results.add(
+          MapEntry(
+            Lecture.fromMap(map, includeEmbedding: false),
+            score,
+          ),
+        );
+      }
+    }
+
+    // 按分數由高到低排序
+    results.sort((a, b) => b.value.compareTo(a.value));
+    return results.map((e) => e.key).toList();
+  }
+
+  Future<Set<String>> getManagedAudioPaths() async {
+    final database = await db;
+    final maps = await database.query(
+      'lectures',
+      columns: const ['managedAudioPath'],
+      where: "managedAudioPath IS NOT NULL AND TRIM(managedAudioPath) <> ''",
+    );
+
+    return maps
+        .map((map) => (map['managedAudioPath'] as String? ?? '').trim())
+        .where((path) => path.isNotEmpty)
+        .toSet();
   }
 
   Future<Lecture?> getLectureById(int id) async {
@@ -188,6 +288,48 @@ class DbService {
     _emitChange();
   }
 
+  Future<void> updateLectureTag(String oldTag, String newTag) async {
+    final database = await db;
+    final cleanOld = oldTag.trim();
+    final cleanNew = newTag.trim();
+    if (cleanOld == cleanNew || cleanNew.isEmpty) return;
+
+    // 1. 更新舊有的 legacy 'tag' 欄位
+    await database.update(
+      'lectures',
+      {'tag': cleanNew},
+      where: 'tag = ?',
+      whereArgs: [cleanOld],
+    );
+
+    // 2. 更新 tagsJson - 使用 LIKE 進行初步過濾以應對大數據集
+    final maps = await database.query(
+      'lectures',
+      where: 'tagsJson LIKE ?',
+      whereArgs: ['%$cleanOld%'],
+    );
+
+    if (maps.isNotEmpty) {
+      final batch = database.batch();
+      for (final m in maps) {
+        final lecture = Lecture.fromMap(m);
+        if (lecture.tags.contains(cleanOld)) {
+          final newTags =
+              lecture.tags.map((t) => t == cleanOld ? cleanNew : t).toList();
+          final updated = lecture.copyWith(tags: newTags);
+          batch.update(
+            'lectures',
+            updated.toMap(),
+            where: 'id = ?',
+            whereArgs: [lecture.id],
+          );
+        }
+      }
+      await batch.commit(noResult: true);
+    }
+    _emitChange();
+  }
+
   Lecture _prepareLectureForPersistence(Lecture lecture) {
     if (lecture.uid.trim().isNotEmpty) {
       return lecture;
@@ -204,6 +346,7 @@ class DbService {
 
   Future<String> resolveAudioPath(Lecture lecture) async {
     final relativePath = lecture.managedAudioPath.trim();
+
     if (relativePath.isEmpty) {
       return lecture.audioPath;
     }
@@ -212,8 +355,34 @@ class DbService {
     return normalize(join(documentsDirectory.path, relativePath));
   }
 
+  Future<String> resolveSafeAudioPath(Lecture lecture) async {
+    final managedAudioDirectory = await getManagedAudioDirectory();
+    final managedAudioRoot = normalize(managedAudioDirectory.path);
+    final relativePath = lecture.managedAudioPath.trim();
+
+    if (relativePath.isNotEmpty) {
+      final documentsDirectory = await _documentsDirectory();
+      final resolvedManagedPath =
+          normalize(join(documentsDirectory.path, relativePath));
+      if (_isPathWithinRoot(managedAudioRoot, resolvedManagedPath)) {
+        return resolvedManagedPath;
+      }
+      throw StateError('Lecture audio path is outside managed storage.');
+    }
+
+    final normalizedAudioPath = normalize(lecture.audioPath);
+    if (_isPathWithinRoot(managedAudioRoot, normalizedAudioPath)) {
+      return normalizedAudioPath;
+    }
+    throw StateError('Lecture audio path is outside managed storage.');
+  }
+
   Future<File> resolveAudioFile(Lecture lecture) async {
     return File(await resolveAudioPath(lecture));
+  }
+
+  Future<File> resolveSafeAudioFile(Lecture lecture) async {
+    return File(await resolveSafeAudioPath(lecture));
   }
 
   Future<Directory> getDocumentsDirectory() async {
@@ -229,9 +398,54 @@ class DbService {
     return Directory(join(documentsDirectory.path, 'media', 'audio'));
   }
 
-  Future<void> deleteLecture(int id) async {
+  void notifyExternalDataMutation() {
+    _emitChange();
+  }
+
+  Future<void> deleteLecture(Lecture lecture) async {
+    final id = lecture.id;
+    if (id == null) {
+      return;
+    }
+
     final database = await db;
     await database.delete('lectures', where: 'id = ?', whereArgs: [id]);
+
+    final deletionTarget = await _resolveDeletionTarget(lecture);
+    if (deletionTarget == null) {
+      _emitChange();
+      return;
+    }
+
+    try {
+      if (await deletionTarget.exists()) {
+        await deletionTarget.delete();
+      }
+    } on FileSystemException {
+      // Ignore missing or concurrently removed audio files after the row is gone.
+    }
+
     _emitChange();
+  }
+
+  Future<File?> _resolveDeletionTarget(Lecture lecture) async {
+    if (lecture.managedAudioPath.trim().isEmpty) {
+      return null;
+    }
+
+    final managedAudioDirectory = await getManagedAudioDirectory();
+    final managedAudioRoot = normalize(managedAudioDirectory.path);
+
+    final resolvedManagedPath = await resolveAudioPath(lecture);
+    if (_isPathWithinRoot(managedAudioRoot, resolvedManagedPath)) {
+      return File(resolvedManagedPath);
+    }
+    return null;
+  }
+
+  bool _isPathWithinRoot(String rootPath, String candidatePath) {
+    final relativePath = relative(candidatePath, from: rootPath);
+    return relativePath != '..' &&
+        !relativePath.startsWith('..${Platform.pathSeparator}');
   }
 }

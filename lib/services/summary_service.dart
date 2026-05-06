@@ -58,6 +58,7 @@ class LocalSummaryService implements SummaryService {
 class MiniLmSummaryService implements SummaryService {
   static const int _maxCandidateSentences = 24;
   static const int _maxKeyPoints = 4;
+  static const int _verbatimSummaryThreshold = 120;
 
   const MiniLmSummaryService({
     SentenceEmbeddingRuntime? runtime,
@@ -72,15 +73,24 @@ class MiniLmSummaryService implements SummaryService {
   Future<String> summarizeTranscript(String transcript) async {
     final normalizedTranscript = transcript.trim();
     if (normalizedTranscript.isEmpty) {
-      return _fallbackService.summarizeTranscript(normalizedTranscript);
+      return ''; // 真的沒文字就回傳空，不要觸發 fallback 的範例文字
     }
 
-    final candidates = normalizeKeyPoints(
-      TextRank.splitSentences(normalizedTranscript),
-    ).take(_maxCandidateSentences).toList(growable: false);
-    if (candidates.length < 2) {
-      return _fallbackService.summarizeTranscript(normalizedTranscript);
+    // 針對非常短的文字（例如匯入音檔辨識不佳），至少嘗試提取第一句
+    final sentences = TextRank.splitSentences(normalizedTranscript);
+    if (sentences.length < 2) {
+      if (sentences.isEmpty) {
+        return '';
+      }
+      if (normalizedTranscript.length <= _verbatimSummaryThreshold) {
+        return '• ${ensureTerminalPunctuation(sentences.first)}';
+      }
+      return _fallbackService.summarizeTranscript(transcript);
     }
+
+    final candidates = normalizeKeyPoints(sentences)
+        .take(_maxCandidateSentences)
+        .toList(growable: false);
 
     try {
       final embeddings = await _runtime.embedSentences(candidates);
@@ -94,11 +104,10 @@ class MiniLmSummaryService implements SummaryService {
         return formatSummaryBullets(normalizedKeyPoints);
       }
     } catch (error) {
-      debugPrint(
-          'MiniLmSummaryService falling back to local summarizer: $error');
+      debugPrint('MiniLmSummaryService fallback: $error');
     }
 
-    return _fallbackService.summarizeTranscript(normalizedTranscript);
+    return _fallbackService.summarizeTranscript(transcript);
   }
 }
 

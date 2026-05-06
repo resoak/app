@@ -1,6 +1,11 @@
 import 'dart:math' as math;
 
 class TextRank {
+  static const int _minSentenceLength = 6;
+  static const int _cjkLongUnpunctuatedTextThreshold = 64;
+  static const int _latinLongUnpunctuatedTextThreshold = 120;
+  static const int _cjkFallbackChunkLength = 32;
+  static const int _latinFallbackChunkLength = 96;
   static final RegExp _latinWordPattern = RegExp(r'[A-Za-z0-9]+');
   static final RegExp _cjkCharPattern = RegExp(r'[\u3400-\u4DBF\u4E00-\u9FFF]');
   static const Set<String> _englishStopWords = {
@@ -96,11 +101,146 @@ class TextRank {
   }
 
   static List<String> splitSentences(String text) {
+    final normalized = text.replaceAll(RegExp(r'[^\S\n]+'), ' ').trim();
+    if (normalized.isEmpty) return const [];
+
+    final split = _splitOnSentenceDelimiters(normalized);
+    final longTextThreshold = _cjkCharPattern.hasMatch(normalized)
+        ? _cjkLongUnpunctuatedTextThreshold
+        : _latinLongUnpunctuatedTextThreshold;
+    if (split.length >= 2 || normalized.length <= longTextThreshold) {
+      return split;
+    }
+
+    final fallbackChunks = _fallbackChunkLongText(normalized);
+    if (fallbackChunks.length >= 2) {
+      return fallbackChunks;
+    }
+
+    return split;
+  }
+
+  static List<String> _splitOnSentenceDelimiters(String text) {
     return text
         .split(RegExp(r'[。？！\n\.!?]+'))
-        .map((s) => s.trim())
-        .where((s) => s.length > 5)
-        .toList();
+        .map((segment) => segment.trim())
+        .where((segment) => segment.length >= _minSentenceLength)
+        .toList(growable: false);
+  }
+
+  static List<String> _fallbackChunkLongText(String text) {
+    final targetLength = _cjkCharPattern.hasMatch(text)
+        ? _cjkFallbackChunkLength
+        : _latinFallbackChunkLength;
+
+    final clauseParts = text
+        .split(RegExp(r'[，,、；;：:]+'))
+        .map((segment) => segment.trim())
+        .where((segment) => segment.length >= _minSentenceLength)
+        .toList(growable: false);
+    final clauseChunks = _mergeShortParts(clauseParts, targetLength);
+    if (clauseChunks.length >= 2) {
+      return clauseChunks;
+    }
+
+    if (text.contains(' ')) {
+      return _chunkByWords(text, targetLength);
+    }
+
+    return _chunkByCharacters(text, targetLength);
+  }
+
+  static List<String> _mergeShortParts(List<String> parts, int targetLength) {
+    if (parts.isEmpty) return const [];
+
+    final merged = <String>[];
+    final buffer = StringBuffer();
+
+    void flush() {
+      final candidate = buffer.toString().trim();
+      buffer.clear();
+      if (candidate.length >= _minSentenceLength) {
+        merged.add(candidate);
+      }
+    }
+
+    for (final part in parts) {
+      if (buffer.isEmpty) {
+        buffer.write(part);
+        continue;
+      }
+
+      final combinedLength = buffer.length + part.length + 1;
+      if (combinedLength <= targetLength) {
+        buffer.write(' ');
+        buffer.write(part);
+      } else {
+        flush();
+        buffer.write(part);
+      }
+    }
+
+    if (buffer.isNotEmpty) {
+      flush();
+    }
+
+    return merged;
+  }
+
+  static List<String> _chunkByWords(String text, int targetLength) {
+    final words = text
+        .split(RegExp(r'\s+'))
+        .map((word) => word.trim())
+        .where((word) => word.isNotEmpty)
+        .toList(growable: false);
+    if (words.isEmpty) return const [];
+
+    final chunks = <String>[];
+    final buffer = StringBuffer();
+
+    void flush() {
+      final candidate = buffer.toString().trim();
+      buffer.clear();
+      if (candidate.length >= _minSentenceLength) {
+        chunks.add(candidate);
+      }
+    }
+
+    for (final word in words) {
+      if (buffer.isEmpty) {
+        buffer.write(word);
+        continue;
+      }
+
+      final combinedLength = buffer.length + word.length + 1;
+      if (combinedLength <= targetLength) {
+        buffer.write(' ');
+        buffer.write(word);
+      } else {
+        flush();
+        buffer.write(word);
+      }
+    }
+
+    if (buffer.isNotEmpty) {
+      flush();
+    }
+
+    return chunks;
+  }
+
+  static List<String> _chunkByCharacters(String text, int targetLength) {
+    final chunks = <String>[];
+
+    for (var start = 0; start < text.length; start += targetLength) {
+      final end = math.min(start + targetLength, text.length);
+      final candidate = text.substring(start, end).trim();
+      if (candidate.length >= _minSentenceLength) {
+        chunks.add(candidate);
+      }
+    }
+
+    return chunks;
   }
 
   static List<double> _pageRank(

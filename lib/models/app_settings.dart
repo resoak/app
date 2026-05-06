@@ -4,9 +4,8 @@ import 'package:characters/characters.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 enum AppBackgroundStyle {
-  darkDefault,
-  aurora,
-  blueprint,
+  black,
+  white,
 }
 
 extension AppBackgroundStyleX on AppBackgroundStyle {
@@ -14,33 +13,32 @@ extension AppBackgroundStyleX on AppBackgroundStyle {
 
   String get label {
     switch (this) {
-      case AppBackgroundStyle.darkDefault:
-        return 'Dark Core';
-      case AppBackgroundStyle.aurora:
-        return 'Aurora Pulse';
-      case AppBackgroundStyle.blueprint:
-        return 'Blueprint Grid';
+      case AppBackgroundStyle.black:
+        return 'Black';
+      case AppBackgroundStyle.white:
+        return 'White';
     }
   }
 
   String get description {
     switch (this) {
-      case AppBackgroundStyle.darkDefault:
-        return '保留現在的深色霓虹基底，最穩定也最接近既有畫面。';
-      case AppBackgroundStyle.aurora:
-        return '加入柔和紫藍光暈，適合長時間閱讀與錄音。';
-      case AppBackgroundStyle.blueprint:
-        return '以冷色網格與掃描線強化分析儀表板感。';
+      case AppBackgroundStyle.black:
+        return '純黑預設背景。';
+      case AppBackgroundStyle.white:
+        return '純白預設背景。';
     }
   }
 
   static AppBackgroundStyle fromStorage(String? raw) {
+    if (raw == 'darkDefault' || raw == 'aurora' || raw == 'blueprint') {
+      return AppBackgroundStyle.black;
+    }
     for (final style in AppBackgroundStyle.values) {
       if (style.storageValue == raw) {
         return style;
       }
     }
-    return AppBackgroundStyle.darkDefault;
+    return AppBackgroundStyle.black;
   }
 }
 
@@ -48,7 +46,7 @@ extension WhisperModelSettingsX on WhisperModel {
   String get storageValue => name;
 
   static WhisperModel fromStorage(String? raw) {
-    for (final model in WhisperModel.values) {
+    for (final model in AppSettings.availableWhisperModels) {
       if (model.name == raw) {
         return model;
       }
@@ -101,6 +99,7 @@ class AppSettings {
     required this.lectureLabels,
     required this.timelineLabels,
     required this.backgroundStyle,
+    required this.backgroundImagePath,
   });
 
   static const WhisperModel defaultWhisperModel = WhisperModel.base;
@@ -108,6 +107,14 @@ class AppSettings {
     WhisperModel.base,
     WhisperModel.small,
   ];
+
+  static WhisperModel resolveAvailableWhisperModel(WhisperModel model) {
+    if (availableWhisperModels.contains(model)) {
+      return model;
+    }
+    return defaultWhisperModel;
+  }
+
   static const List<String> defaultLectureLabels = [
     '一般',
     '重點',
@@ -127,6 +134,7 @@ class AppSettings {
   final List<String> lectureLabels;
   final List<String> timelineLabels;
   final AppBackgroundStyle backgroundStyle;
+  final String backgroundImagePath;
 
   factory AppSettings.defaults() {
     return const AppSettings(
@@ -134,7 +142,8 @@ class AppSettings {
       preferredWhisperModel: defaultWhisperModel,
       lectureLabels: defaultLectureLabels,
       timelineLabels: defaultTimelineLabels,
-      backgroundStyle: AppBackgroundStyle.darkDefault,
+      backgroundStyle: AppBackgroundStyle.black,
+      backgroundImagePath: '',
     );
   }
 
@@ -162,6 +171,8 @@ class AppSettings {
       backgroundStyle: AppBackgroundStyleX.fromStorage(
         raw[AppSettingsKeys.backgroundStyle],
       ),
+      backgroundImagePath:
+          raw[AppSettingsKeys.backgroundImagePath]?.trim() ?? '',
     );
   }
 
@@ -171,6 +182,7 @@ class AppSettings {
     List<String>? lectureLabels,
     List<String>? timelineLabels,
     AppBackgroundStyle? backgroundStyle,
+    String? backgroundImagePath,
   }) {
     return AppSettings(
       profile: profile ?? this.profile,
@@ -183,6 +195,7 @@ class AppSettings {
           ? this.timelineLabels
           : _normalizeLabels(timelineLabels),
       backgroundStyle: backgroundStyle ?? this.backgroundStyle,
+      backgroundImagePath: backgroundImagePath ?? this.backgroundImagePath,
     );
   }
 
@@ -195,6 +208,7 @@ class AppSettings {
       AppSettingsKeys.lectureLabels: jsonEncode(lectureLabels),
       AppSettingsKeys.timelineLabels: jsonEncode(timelineLabels),
       AppSettingsKeys.backgroundStyle: backgroundStyle.storageValue,
+      AppSettingsKeys.backgroundImagePath: backgroundImagePath.trim(),
     };
   }
 
@@ -248,4 +262,5 @@ abstract final class AppSettingsKeys {
   static const String lectureLabels = 'labels.lecture';
   static const String timelineLabels = 'labels.timeline';
   static const String backgroundStyle = 'background.style';
+  static const String backgroundImagePath = 'background.imagePath';
 }

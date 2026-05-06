@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
@@ -73,15 +74,32 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
   @override
   Future<http.Client> getAuthenticatedClient({bool promptIfNeeded = false}) async {
     try {
-      final currentUser = _googleSignIn.currentUser ??
-          (promptIfNeeded ? await _googleSignIn.signIn() : await _googleSignIn.signInSilently());
+      GoogleSignInAccount? currentUser = _googleSignIn.currentUser;
+      
+      // 如果目前沒有登入且需要提示，則嘗試登入
       if (currentUser == null) {
-        throw const DriveBackupException('請先使用 Google 帳號登入，才能操作雲端備份。');
+        if (promptIfNeeded) {
+          currentUser = await _googleSignIn.signIn();
+        } else {
+          currentUser = await _googleSignIn.signInSilently();
+        }
+      }
+
+      if (currentUser == null) {
+        throw const DriveBackupException('請先登入 Google 帳號以進行雲端備份。');
+      }
+
+      // 韌性優化：主動清除快取以強迫刷新 Token，防止在備份中途過期
+      try {
+        await currentUser.clearAuthCache();
+      } catch (e) {
+        // 清除失敗通常不代表致命錯誤，記錄即可
+        debugPrint('GoogleDriveAuth: 無法清除 Token 快取: $e');
       }
 
       final client = await _googleSignIn.authenticatedClient();
       if (client == null) {
-        throw const DriveBackupException('Google Drive 授權未完成，請重新登入後再試一次。');
+        throw const DriveBackupException('無法取得 Google 授權，請嘗試重新登入。');
       }
       return client;
     } catch (error) {
@@ -108,28 +126,29 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
     final message = error.toString();
     final normalized = message.toLowerCase();
 
-    if (normalized.contains('network')) {
-      return DriveBackupException('無法連線到 Google，請確認網路後再試一次。', cause: error);
+    // 針對台灣常見網路錯誤與 Google API 錯誤進行優化
+    if (normalized.contains('network') || normalized.contains('connection')) {
+      return DriveBackupException('網路連線異常，請檢查 Wi-Fi 或行動數據後再試。', cause: error);
     }
 
     if (normalized.contains('canceled') || normalized.contains('cancelled')) {
-      return DriveBackupException('已取消 Google 登入。', cause: error);
+      return DriveBackupException('操作已取消。', cause: error);
+    }
+
+    if (normalized.contains('user-recoverable')) {
+      return DriveBackupException('Google 帳號需要重新驗證，請登出後再重新登入。', cause: error);
     }
 
     if (normalized.contains('apiexception: 10') ||
-        normalized.contains('developer_error') ||
-        normalized.contains('clientid') ||
-        normalized.contains('google-services.json') ||
-        normalized.contains('oauth') ||
-        normalized.contains('reverse_client_id')) {
+        normalized.contains('developer_error')) {
       return DriveBackupException(
-        'Google 登入尚未設定完成。請先在此 App 加入正確的 Google OAuth 設定檔後再試。',
+        'Google 服務設定錯誤（可能是 SHA-1 指紋不符），請聯絡開發人員。',
         cause: error,
       );
     }
 
     return DriveBackupException(
-      'Google Drive 驗證失敗，請稍後再試一次。',
+      'Google Drive 服務暫時無法使用 ($error)',
       cause: error,
     );
   }

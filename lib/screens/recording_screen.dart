@@ -125,7 +125,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
       transcriptionStatus: LectureProcessingStatus.processing,
       summaryStatus: LectureProcessingStatus.pending,
       durationSeconds: _seconds,
-      tag: '一般',
+      tags: const ['一般'],
       timeline: const [],
     );
 
@@ -217,17 +217,17 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                     children: [
                       Expanded(
                         child: Center(
-                          child: ValueListenableBuilder<double>(
-                            valueListenable: _recordingService.inputLevel,
-                            builder: (context, level, child) {
-                              return RecordingWaveform(
-                                animation: CurvedAnimation(
-                                  parent: _waveCtrl,
-                                  curve: Curves.linear,
-                                ),
-                                level: level,
-                              );
-                            },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: RecordingWaveform(
+                              level: 0,
+                              maxHeight: 80, // 將高度從 120 調小至 80
+                              pcmData: _recordingService.pcmBuffer,
+                              animation: CurvedAnimation(
+                                parent: _waveCtrl,
+                                curve: Curves.linear,
+                              ),
+                            ),
                           ),
                         ),
                       ),

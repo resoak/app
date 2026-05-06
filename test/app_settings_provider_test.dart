@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lecture_vault/models/app_settings.dart';
+import 'package:lecture_vault/models/lecture.dart';
 import 'package:lecture_vault/providers/app_settings_provider.dart';
 import 'package:lecture_vault/services/db_service.dart';
 import 'package:lecture_vault/services/settings_service.dart';
@@ -33,6 +34,7 @@ void main() {
       return ProviderContainer(
         overrides: [
           settingsServiceProvider.overrideWithValue(settingsService),
+          dbServiceProvider.overrideWithValue(db),
         ],
       );
     }
@@ -47,7 +49,8 @@ void main() {
       expect(settings.preferredWhisperModel, WhisperModel.base);
       expect(settings.lectureLabels, AppSettings.defaultLectureLabels);
       expect(settings.timelineLabels, AppSettings.defaultTimelineLabels);
-      expect(settings.backgroundStyle, AppBackgroundStyle.darkDefault);
+      expect(settings.backgroundStyle, AppBackgroundStyle.black);
+      expect(settings.backgroundImagePath, isEmpty);
     });
 
     test('persists profile, model, labels, and background style', () async {
@@ -64,7 +67,8 @@ void main() {
       await notifier.updatePreferredWhisperModel(WhisperModel.small);
       await notifier.addLectureLabel('專題');
       await notifier.addTimelineLabel('問答');
-      await notifier.updateBackgroundStyle(AppBackgroundStyle.blueprint);
+      await notifier.updateBackgroundStyle(AppBackgroundStyle.white);
+      await notifier.updateBackgroundImagePath('media/backgrounds/custom.jpg');
 
       expect(
         await settingsService.getValue(AppSettingsKeys.profileDisplayName),
@@ -76,7 +80,11 @@ void main() {
       );
       expect(
         await settingsService.getValue(AppSettingsKeys.backgroundStyle),
-        AppBackgroundStyle.blueprint.storageValue,
+        AppBackgroundStyle.white.storageValue,
+      );
+      expect(
+        await settingsService.getValue(AppSettingsKeys.backgroundImagePath),
+        'media/backgrounds/custom.jpg',
       );
 
       final storedLectureLabels = jsonDecode(
@@ -101,7 +109,39 @@ void main() {
       expect(reloadedSettings.preferredWhisperModel, WhisperModel.small);
       expect(reloadedSettings.lectureLabels, contains('專題'));
       expect(reloadedSettings.timelineLabels, contains('問答'));
-      expect(reloadedSettings.backgroundStyle, AppBackgroundStyle.blueprint);
+      expect(reloadedSettings.backgroundStyle, AppBackgroundStyle.white);
+      expect(
+        reloadedSettings.backgroundImagePath,
+        'media/backgrounds/custom.jpg',
+      );
+    });
+
+    test('updateLectureLabel 應替換現有標籤名稱並更新資料庫課程', () async {
+      final container = createContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(appSettingsProvider.notifier);
+      await container.read(appSettingsProvider.future);
+
+      // 1. 建立一個帶有舊標籤的課程
+      await db.insertLecture(Lecture(
+        title: '測試課程',
+        date: DateTime.now().toIso8601String(),
+        audioPath: 'test.m4a',
+        tags: ['舊標籤'],
+      ));
+
+      // 2. 執行標籤重新命名
+      await notifier.addLectureLabel('舊標籤');
+      await notifier.updateLectureLabel('舊標籤', '新標籤');
+
+      // 3. 驗證設定檔
+      final settings = await container.read(appSettingsProvider.future);
+      expect(settings.lectureLabels, contains('新標籤'));
+      expect(settings.lectureLabels, isNot(contains('舊標籤')));
+
+      // 4. 驗證資料庫課程標籤已同步
+      final lectures = await db.getAllLectures();
+      expect(lectures.first.tags, contains('新標籤'));
     });
   });
 }

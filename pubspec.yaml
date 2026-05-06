@@ -26,11 +26,14 @@ dependencies:
   sqflite: ^2.3.0
   whisper_ggml_plus: ^1.5.2
   audioplayers: ^5.2.1
+  wakelock_plus: ^1.2.8
+  ffmpeg_kit_min_gpl: ^6.0.3+2-LTS
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  wakelock_plus_platform_interface: ^1.5.0
   sqflite_common_ffi: ^2.3.0+1
 
 flutter:
@@ -41,7 +44,6 @@ flutter:
     - assets/models/whisper/ggml-base.bin
     - assets/models/whisper/ggml-base.en.bin
     - assets/models/whisper/ggml-small.bin
-    - assets/models/whisper/ggml-medium.bin
     - assets/models/minilm/
     - assets/audio/test.wav
 

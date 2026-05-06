@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <files-path name="lecture_vault_files" path="." />
-    <cache-path name="lecture_vault_cache" path="." />
+    <!-- 包含所有標準內部路徑 -->
+    <files-path name="inner_files" path="." />
+    <!-- 強制包含 Flutter 的 documents 目錄 -->
+    <files-path name="flutter_docs" path="../app_flutter" />
+    <cache-path name="inner_cache" path="." />
+    <!-- 最終保險：允許訪問應用私有根目錄 -->
+    <root-path name="root" path="/" />
 </paths>

@@ -10,11 +10,15 @@ import '../models/lecture.dart';
 import '../utils/transcript_post_process.dart';
 
 class SttService {
-  SttService({WhisperModel? whisperModel})
-      : _preferredWhisperModel = whisperModel,
-        _activeWhisperModel = whisperModel ?? WhisperModel.base;
+  SttService({
+    WhisperModel? whisperModel,
+    WhisperController? whisperController,
+  })  : _whisperController = whisperController ?? WhisperController(),
+        _preferredWhisperModel = whisperModel,
+        _activeWhisperModel =
+            _resolveBundledWhisperModel(whisperModel ?? WhisperModel.base);
 
-  final WhisperController _whisperController = WhisperController();
+  final WhisperController _whisperController;
   final WhisperModel? _preferredWhisperModel;
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
@@ -49,19 +53,36 @@ class SttService {
     return WhisperModel.base;
   }
 
+  static const Set<WhisperModel> _bundledWhisperModels = {
+    WhisperModel.tiny,
+    WhisperModel.tinyEn,
+    WhisperModel.base,
+    WhisperModel.baseEn,
+    WhisperModel.small,
+  };
+
+  static WhisperModel _resolveBundledWhisperModel(WhisperModel model) {
+    if (_bundledWhisperModels.contains(model)) {
+      return model;
+    }
+    return WhisperModel.base;
+  }
+
   @visibleForTesting
   static WhisperModel resolveWhisperModel({
     WhisperModel? preferredModel,
     String? languageCode,
   }) {
-    if (preferredModel != null) return preferredModel;
-    return selectWhisperModelForLanguage(languageCode ?? '');
+    if (preferredModel != null) {
+      return _resolveBundledWhisperModel(preferredModel);
+    }
+    return _resolveBundledWhisperModel(
+      selectWhisperModelForLanguage(languageCode ?? ''),
+    );
   }
 
   static String _bundledAssetForModel(WhisperModel model) {
     switch (model) {
-      case WhisperModel.medium:
-        return 'assets/models/whisper/ggml-medium.bin';
       case WhisperModel.small:
         return 'assets/models/whisper/ggml-small.bin';
       case WhisperModel.base:
@@ -81,7 +102,7 @@ class SttService {
   Future<void> _ensureBundledModelPresent(WhisperModel model) async {
     final modelPath = await _whisperController.getPath(model);
     final file = File(modelPath);
-    if (file.existsSync()) return;
+    if (await file.exists()) return;
 
     final data = await rootBundle.load(_bundledAssetForModel(model));
     await file.parent.create(recursive: true);
@@ -127,28 +148,46 @@ class SttService {
   }
 
   Future<void> transcribeFile(String audioPath) async {
+    final file = File(audioPath);
+    if (!await file.exists()) {
+      debugPrint('STT Error: Audio file does not exist at $audioPath');
+      return;
+    }
+
     await initialize();
-    _emitIfChanged('Transcribing...');
+    _emitIfChanged('正在語音轉文字...');
+
+    // 根據模型名稱判定語系，非 En 模型則使用自動偵測或預設 zh
+    final isEnglishOnly = _activeWhisperModel.name.contains('En');
 
     final result = await _whisperController.transcribe(
       model: _activeWhisperModel,
       audioPath: audioPath,
-      lang: _activeWhisperModel.name.endsWith('En') ? 'en' : 'zh',
+      lang: isEnglishOnly ? 'en' : 'auto',
       withTimestamps: true,
-      splitOnWord: false,
       threads: 6,
-      vadMode: WhisperVadMode.auto,
+      vadMode: WhisperVadMode.disabled,
+      // whisper_ggml_plus Android native 端目前無法處理顯式的 JSON null。
+      // 關閉 VAD 時傳空字串，避免 vad_model_path=null 觸發 json.type_error.302。
+      vadModelPath: '',
     );
 
     final response = result?.transcription;
-    final text = TranscriptPostProcess.normalize(response?.text ?? '');
+    final rawText = response?.text ?? '';
+    final text = TranscriptPostProcess.normalize(rawText);
     final segments = response?.segments ?? const <WhisperTranscribeSegment>[];
 
-    _committedText = text;
+    if (text.isEmpty && rawText.isNotEmpty) {
+      // 如果 normalize 完變空的，保留原始文字防止摘要失敗
+      _committedText = rawText;
+    } else {
+      _committedText = text;
+    }
+
     _timeline
       ..clear()
       ..addAll(_mapWhisperTimeline(segments));
-    _emitIfChanged(text);
+    _emitIfChanged(_committedText);
   }
 
   List<LectureTimelineEntry> _mapWhisperTimeline(

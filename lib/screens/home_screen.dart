@@ -10,6 +10,7 @@ import '../providers/app_settings_provider.dart';
 import '../providers/transcription_provider.dart';
 import '../services/audio_import_service.dart';
 import '../services/db_service.dart';
+import '../services/minilm_runtime_service.dart';
 import '../theme/lecture_vault_theme.dart';
 import '../utils/format_utils.dart';
 import '../widgets/lecture_vault_background.dart';
@@ -29,25 +30,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final AudioImportService _audioImportService = AudioImportService();
   StreamSubscription<void>? _dbChangesSub;
   List<Lecture> _lectures = [];
+  List<Lecture> _visibleLectures = [];
+  List<MapEntry<String, String>> _cachedFilters = [const MapEntry('all', '全部')];
   final Map<int, String> _fileSizeById = {};
   bool _isLoadingLectures = true;
   int _refreshGeneration = 0;
   String _filterKey = 'all';
   String _searchQuery = '';
+  bool _isSemanticSearching = false;
+  Timer? _searchDebounce;
+  int _semanticSearchGeneration = 0;
   int _bottomIndex = 0;
   int? _selectedLectureId;
 
-  List<MapEntry<String, String>> get _filters {
-    final tags = _lectures
-        .map((lecture) => lecture.tag.trim())
+  void _updateFilters() {
+    final allTags = _lectures
+        .expand((lecture) => lecture.tags)
+        .map((tag) => tag.trim())
         .where((tag) => tag.isNotEmpty)
         .toSet()
         .toList()
       ..sort();
-    return [
+
+    _cachedFilters = [
       const MapEntry('all', '全部'),
-      ...tags.map((tag) => MapEntry(tag, '#$tag')),
+      ...allTags.map((tag) => MapEntry(tag, '#$tag')),
     ];
+  }
+
+  void _updateVisibleLectures() {
+    final q = _searchQuery.trim().toLowerCase();
+
+    _visibleLectures = _lectures.where((l) {
+      // 標籤篩選
+      if (_filterKey != 'all' && !l.tags.any((t) => t.trim() == _filterKey)) {
+        return false;
+      }
+      // 搜尋關鍵字
+      if (q.isNotEmpty) {
+        return l.title.toLowerCase().contains(q) ||
+            l.transcript.toLowerCase().contains(q) ||
+            l.summary.toLowerCase().contains(q);
+      }
+      return true;
+    }).toList();
   }
 
   @override
@@ -66,13 +92,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _refreshData() async {
     final refreshGeneration = ++_refreshGeneration;
-    final data = await _dbService.getAllLectures();
+    final data = await _dbService.getAllLectures(includeEmbeddings: false);
 
     if (!mounted || refreshGeneration != _refreshGeneration) return;
 
     setState(() {
       _lectures = data;
       _isLoadingLectures = false;
+      _updateFilters();
+      _updateVisibleLectures();
+
       if (_selectedLectureId != null &&
           !data.any((e) => e.id == _selectedLectureId)) {
         _selectedLectureId = null;
@@ -82,21 +111,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
-    final sizes = <int, String>{};
-    for (final l in data) {
-      if (l.id == null) continue;
-      try {
-        final f = await _dbService.resolveAudioFile(l);
-        if (await f.exists()) {
-          final bytes = await f.length();
-          sizes[l.id!] = FormatUtils.formatBytes(bytes);
-        } else {
-          sizes[l.id!] = '—';
-        }
-      } catch (e) {
-        sizes[l.id!] = '—';
-      }
-    }
+    final sizeEntries = await Future.wait(data.map(_loadLectureFileSize));
+    final sizes = <int, String>{
+      for (final entry in sizeEntries)
+        if (entry != null) entry.key: entry.value,
+    };
 
     if (!mounted || refreshGeneration != _refreshGeneration) return;
     setState(() {
@@ -106,24 +125,99 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  bool _passesFilter(Lecture l) {
-    if (_filterKey == 'all') return true;
-    return l.tag.trim() == _filterKey;
+  Future<MapEntry<int, String>?> _loadLectureFileSize(Lecture lecture) async {
+    final lectureId = lecture.id;
+    if (lectureId == null) return null;
+
+    try {
+      final file = await _dbService.resolveSafeAudioFile(lecture);
+      if (!await file.exists()) {
+        return MapEntry(lectureId, '—');
+      }
+
+      final bytes = await file.length();
+      return MapEntry(lectureId, FormatUtils.formatBytes(bytes));
+    } catch (_) {
+      return MapEntry(lectureId, '—');
+    }
   }
 
-  List<Lecture> get _visibleLectures {
-    var list = _lectures.where(_passesFilter).toList();
-    final q = _searchQuery.trim().toLowerCase();
-    if (q.isNotEmpty) {
-      list = list
-          .where(
-            (e) =>
-                e.title.toLowerCase().contains(q) ||
-                e.transcript.toLowerCase().contains(q),
-          )
-          .toList();
+  void _setFilter(String key) {
+    if (_filterKey == key) return;
+    setState(() {
+      _filterKey = key;
+      _updateVisibleLectures();
+    });
+  }
+
+  void _setSearchQuery(String query) {
+    if (_searchQuery == query) return;
+    _searchDebounce?.cancel();
+
+    final normalizedQuery = query.trim();
+    final shouldRunSemanticSearch = normalizedQuery.length >= 2;
+
+    setState(() {
+      _searchQuery = query;
+      _semanticSearchGeneration++;
+      _isSemanticSearching = false;
+      _updateVisibleLectures(); // 立即進行關鍵字過濾，保持反應靈敏
+    });
+
+    // 語義搜尋防抖：延遲 600ms 後執行 AI 向量運算
+    if (shouldRunSemanticSearch) {
+      final generation = _semanticSearchGeneration;
+      _searchDebounce = Timer(
+        const Duration(milliseconds: 600),
+        () => unawaited(
+          _performSemanticSearch(normalizedQuery, generation),
+        ),
+      );
     }
-    return list;
+  }
+
+  void _setBottomIndex(int index) {
+    if (_bottomIndex == index) return;
+    setState(() => _bottomIndex = index);
+  }
+
+  Future<void> _performSemanticSearch(String query, int generation) async {
+    if (!mounted || generation != _semanticSearchGeneration) return;
+
+    setState(() => _isSemanticSearching = true);
+
+    List<Lecture> semanticResults = const [];
+    try {
+      // 1. 將搜尋詞轉換為 384 維向量
+      final queryVectors =
+          await const MiniLmRuntimeService().embedSentences([query]);
+      if (queryVectors.isEmpty) {
+        semanticResults = const [];
+      } else {
+        // 2. 從資料庫進行向量相似度檢索 (Threshold 設為 0.3)
+        semanticResults = await _dbService.searchLecturesBySimilarity(
+          queryVectors.first,
+          threshold: 0.25, // 放寬門檻，讓更多相關內容出現
+        );
+      }
+    } catch (e) {
+      debugPrint('語義搜尋失敗: $e');
+    }
+
+    if (!mounted ||
+        generation != _semanticSearchGeneration ||
+        _searchQuery.trim() != query) {
+      return;
+    }
+
+    setState(() {
+      // 如果語義搜尋有結果，優先顯示（或與關鍵字結果合併）
+      // 這裡我們採取覆蓋策略，因為 searchLecturesBySimilarity 已經包含了排序
+      if (semanticResults.isNotEmpty) {
+        _visibleLectures = semanticResults;
+      }
+      _isSemanticSearching = false;
+    });
   }
 
   String _whisperModelLabel(WhisperModel model) {
@@ -165,10 +259,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (confirm != true) return;
 
-    final file = await _dbService.resolveAudioFile(lecture);
-    if (await file.exists()) await file.delete();
+    await _dbService.deleteLecture(lecture);
+    _refreshData();
+  }
 
-    await _dbService.deleteLecture(lecture.id!);
+  Future<void> _editTag(String oldTag) async {
+    final controller = TextEditingController(text: oldTag);
+    final newTag = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: LectureVaultColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('編輯標籤', style: lvHeading(18)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: '標籤名稱',
+            labelStyle: const TextStyle(color: LectureVaultColors.textMuted),
+            enabledBorder: UnderlineInputBorder(
+              borderSide:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: LectureVaultColors.purpleBright),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('取消',
+                style: lvMono(14, color: LectureVaultColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text('儲存',
+                style: lvMono(14, color: LectureVaultColors.purpleBright)),
+          ),
+        ],
+      ),
+    );
+
+    if (newTag == null || newTag.isEmpty || newTag == oldTag) return;
+
+    // Update lectures in DB
+    await _dbService.updateLectureTag(oldTag, newTag);
+    // Update label in AppSettings
+    await ref
+        .read(appSettingsProvider.notifier)
+        .updateLectureLabel(oldTag, newTag);
+
+    if (_filterKey == oldTag) {
+      setState(() => _filterKey = newTag);
+    }
     _refreshData();
   }
 
@@ -239,12 +384,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _importAudioLecture() async {
+    // 顯示進度指示器，避免大檔案匯入時沒反應
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
     try {
       final selectedWhisperModel =
           ref.read(appSettingsProvider).asData?.value.preferredWhisperModel ??
               AppSettings.defaultWhisperModel;
       final importedLecture = await _audioImportService.pickAndImportLecture();
-      if (importedLecture == null || !mounted) {
+
+      if (!mounted) return;
+      Navigator.pop(context); // 關閉進度指示器
+
+      if (importedLecture == null) {
         return;
       }
 
@@ -261,6 +417,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      Navigator.pop(context); // 確保對話框關閉
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('音檔匯入失敗：$error')),
       );
@@ -365,30 +522,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             height: 40,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: _filters.length,
+              itemCount: _cachedFilters.length,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, i) {
-                final e = _filters[i];
+                final e = _cachedFilters[i];
                 final selected = _filterKey == e.key;
-                return FilterChip(
-                  label: Text(e.value),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _filterKey = e.key),
-                  showCheckmark: false,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  labelStyle: lvMono(12,
+                return GestureDetector(
+                  onLongPress: e.key == 'all' ? null : () => _editTag(e.key),
+                  child: FilterChip(
+                    label: Text(e.value),
+                    selected: selected,
+                    onSelected: (_) => _setFilter(e.key),
+                    showCheckmark: false,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    labelStyle: lvMono(12,
+                        color: selected
+                            ? Colors.white
+                            : LectureVaultColors.textMuted),
+                    selectedColor: LectureVaultColors.purple,
+                    backgroundColor: Colors.transparent,
+                    side: BorderSide(
                       color: selected
-                          ? Colors.white
-                          : LectureVaultColors.textMuted),
-                  selectedColor: LectureVaultColors.purple,
-                  backgroundColor: Colors.transparent,
-                  side: BorderSide(
-                    color: selected
-                        ? LectureVaultColors.purpleBright
-                        : Colors.white.withValues(alpha: 0.2),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
+                          ? LectureVaultColors.purpleBright
+                          : Colors.white.withValues(alpha: 0.2),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                   ),
                 );
               },
@@ -399,18 +559,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: _isLoadingLectures
                 ? const Center(child: CircularProgressIndicator())
                 : _visibleLectures.isEmpty
-                    ? Center(
-                        child: Text(
-                          _lectures.isEmpty
-                              ? '還沒有錄音\n點中央 + 開始錄音'
-                              : _filterKey == 'all'
-                                  ? '尚無課程'
-                                  : '此標籤尚無課程',
-                          textAlign: TextAlign.center,
-                          style:
-                              lvMono(14, color: LectureVaultColors.textMuted),
-                        ),
-                      )
+                    ? _buildEmptyState()
                     : ListView.builder(
                         padding: EdgeInsets.zero,
                         itemCount: _visibleLectures.length,
@@ -422,6 +571,74 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final bool isSearchOrFilter =
+        _filterKey != 'all' || _searchQuery.isNotEmpty;
+    return Center(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: LectureVaultColors.bgCard,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+              ),
+              child: Icon(
+                isSearchOrFilter
+                    ? Icons.search_off_rounded
+                    : Icons.mic_none_rounded,
+                size: 64,
+                color: LectureVaultColors.textMuted.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              isSearchOrFilter ? '找不到符合的內容' : '這裡空空如也',
+              style: lvHeading(18),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isSearchOrFilter
+                  ? '請嘗試更換標籤或關鍵字'
+                  : '點擊下方的 + 按鈕開始您的第一份錄音\n所有 AI 運算皆在本地完成',
+              textAlign: TextAlign.center,
+              style: lvMono(12, color: LectureVaultColors.textMuted),
+            ),
+            if (!isSearchOrFilter) ...[
+              const SizedBox(height: 32),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: LectureVaultColors.statusGreen
+                          .withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.security_rounded,
+                        size: 14, color: LectureVaultColors.statusGreen),
+                    const SizedBox(width: 8),
+                    Text('隱私保護中：無外部伺服器存取',
+                        style:
+                            lvMono(10, color: LectureVaultColors.statusGreen)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -525,18 +742,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               prefixIcon:
                   const Icon(Icons.search, color: LectureVaultColors.textMuted),
+              suffixIcon: _isSemanticSearching
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Padding(
+                        padding: EdgeInsets.all(12.0),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(
+                              LectureVaultColors.purpleBright),
+                        ),
+                      ),
+                    )
+                  : (_searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close,
+                              color: LectureVaultColors.textMuted),
+                          onPressed: () {
+                            _setSearchQuery('');
+                            FocusScope.of(context).unfocus();
+                          },
+                        )
+                      : null),
             ),
-            onChanged: (v) => setState(() => _searchQuery = v),
+            onChanged: _setSearchQuery,
           ),
           const SizedBox(height: 16),
           Expanded(
             child: _visibleLectures.isEmpty
-                ? Center(
-                    child: Text(
-                      '沒有符合的結果',
-                      style: lvMono(14, color: LectureVaultColors.textMuted),
-                    ),
-                  )
+                ? _buildEmptyState()
                 : ListView.builder(
                     itemCount: _visibleLectures.length,
                     itemBuilder: (context, index) {
@@ -734,24 +969,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     style: lvMono(11, color: LectureVaultColors.textMuted),
                   ),
                 ],
-                if (lecture.tag.trim().isNotEmpty) ...[
+                if (lecture.tags.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: LectureVaultColors.blueElectric
-                          .withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: LectureVaultColors.blueElectric
-                            .withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Text(
-                      '#${lecture.tag.trim()}',
-                      style: lvMono(11, color: LectureVaultColors.blueElectric),
-                    ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: lecture.tags.map((tag) {
+                      final trimmed = tag.trim();
+                      if (trimmed.isEmpty) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: LectureVaultColors.blueElectric
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: LectureVaultColors.blueElectric
+                                .withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Text(
+                          '#$trimmed',
+                          style: lvMono(11,
+                              color: LectureVaultColors.blueElectric),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               ],
@@ -807,7 +1051,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => setState(() => _bottomIndex = 0),
+            onPressed: () => _setBottomIndex(0),
             icon: Icon(
               Icons.home_rounded,
               color: _bottomIndex == 0
@@ -817,7 +1061,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const Spacer(),
           IconButton(
-            onPressed: () => setState(() => _bottomIndex = 1),
+            onPressed: () => _setBottomIndex(1),
             icon: Icon(
               Icons.search_rounded,
               color: _bottomIndex == 1
@@ -832,6 +1076,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _dbChangesSub?.cancel();
     super.dispose();
   }
