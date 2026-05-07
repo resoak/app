@@ -47,13 +47,15 @@ void main() {
 
       expect(settings.profile.displayName, isEmpty);
       expect(settings.preferredWhisperModel, WhisperModel.base);
+      expect(settings.summaryMethod, AppSummaryMethod.extractive);
       expect(settings.lectureLabels, AppSettings.defaultLectureLabels);
       expect(settings.timelineLabels, AppSettings.defaultTimelineLabels);
-      expect(settings.backgroundStyle, AppBackgroundStyle.black);
-      expect(settings.backgroundImagePath, isEmpty);
+      expect(settings.backgroundStyle, AppBackgroundStyle.darkDefault);
     });
 
-    test('persists profile, model, labels, and background style', () async {
+    test(
+        'persists profile, model, summary method, labels, and background style',
+        () async {
       final container = createContainer();
       addTearDown(container.dispose);
       await container.read(appSettingsProvider.future);
@@ -65,10 +67,10 @@ void main() {
         note: '偏好精簡摘要',
       );
       await notifier.updatePreferredWhisperModel(WhisperModel.small);
+      await notifier.updateSummaryMethod(AppSummaryMethod.androidLocalLlm);
       await notifier.addLectureLabel('專題');
       await notifier.addTimelineLabel('問答');
       await notifier.updateBackgroundStyle(AppBackgroundStyle.white);
-      await notifier.updateBackgroundImagePath('media/backgrounds/custom.jpg');
 
       expect(
         await settingsService.getValue(AppSettingsKeys.profileDisplayName),
@@ -79,12 +81,12 @@ void main() {
         'small',
       );
       expect(
-        await settingsService.getValue(AppSettingsKeys.backgroundStyle),
-        AppBackgroundStyle.white.storageValue,
+        await settingsService.getValue(AppSettingsKeys.summaryMethod),
+        AppSummaryMethod.androidLocalLlm.storageValue,
       );
       expect(
-        await settingsService.getValue(AppSettingsKeys.backgroundImagePath),
-        'media/backgrounds/custom.jpg',
+        await settingsService.getValue(AppSettingsKeys.backgroundStyle),
+        AppBackgroundStyle.white.storageValue,
       );
 
       final storedLectureLabels = jsonDecode(
@@ -107,13 +109,13 @@ void main() {
       expect(reloadedSettings.profile.organization, 'NTU / HCI Lab');
       expect(reloadedSettings.profile.note, '偏好精簡摘要');
       expect(reloadedSettings.preferredWhisperModel, WhisperModel.small);
+      expect(
+        reloadedSettings.summaryMethod,
+        AppSummaryMethod.androidLocalLlm,
+      );
       expect(reloadedSettings.lectureLabels, contains('專題'));
       expect(reloadedSettings.timelineLabels, contains('問答'));
       expect(reloadedSettings.backgroundStyle, AppBackgroundStyle.white);
-      expect(
-        reloadedSettings.backgroundImagePath,
-        'media/backgrounds/custom.jpg',
-      );
     });
 
     test('updateLectureLabel 應替換現有標籤名稱並更新資料庫課程', () async {

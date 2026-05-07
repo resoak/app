@@ -19,6 +19,8 @@ android {
     }
 
     defaultConfig {
+        // Google Sign-In 的 Android OAuth client 需要以這個 package name
+        // 以及實際安裝 APK / AAB 所用簽章的 SHA-1 一起在 Google Cloud / Firebase 註冊。
         applicationId = "com.example.lecture_vault"
         minSdk = 24
         targetSdk = flutter.targetSdkVersion

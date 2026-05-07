@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'android_local_llm_runtime_service.dart';
 import '../utils/embedding_extractive_ranker.dart';
 import '../utils/paragraph_summary.dart';
 import '../utils/text_rank.dart';
@@ -108,6 +109,77 @@ class MiniLmSummaryService implements SummaryService {
     }
 
     return _fallbackService.summarizeTranscript(transcript);
+  }
+}
+
+class AndroidLocalLlmSummaryService implements SummaryService {
+  AndroidLocalLlmSummaryService({
+    LocalLlmTranscriptSummaryRuntime? runtime,
+    SummaryService? fallbackService,
+  })  : _runtime = runtime ?? AndroidLocalLlmRuntimeService(),
+        _fallbackService = fallbackService ?? const MiniLmSummaryService();
+
+  final LocalLlmTranscriptSummaryRuntime _runtime;
+  final SummaryService _fallbackService;
+
+  @override
+  Future<String> summarizeTranscript(String transcript) async {
+    final normalizedTranscript = transcript.trim();
+    if (normalizedTranscript.isEmpty) {
+      return '';
+    }
+
+    try {
+      final attempt = await _runtime.summarizeTranscript(normalizedTranscript);
+      if (attempt.hasSummary) {
+        final formattedSummary = _formatRuntimeSummary(attempt.summary!);
+        if (formattedSummary.isNotEmpty) {
+          return formattedSummary;
+        }
+        debugPrint(
+          'AndroidLocalLlmSummaryService produced no usable bullet lines, falling back.',
+        );
+      } else if (attempt.isUnavailable) {
+        debugPrint(
+          'AndroidLocalLlmSummaryService unavailable: ${attempt.message}',
+        );
+      }
+    } catch (error) {
+      debugPrint('AndroidLocalLlmSummaryService fallback: $error');
+    }
+
+    return _fallbackService.summarizeTranscript(transcript);
+  }
+
+  String _formatRuntimeSummary(String rawSummary) {
+    final normalizedLines = rawSummary
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map(
+          (line) => line.replaceFirst(
+            RegExp(r'^(?:[•*\-]|\d+[.)、])\s*'),
+            '',
+          ),
+        )
+        .where((line) => line.isNotEmpty && !line.startsWith('摘要'))
+        .toList(growable: false);
+
+    final bulletLines = normalizeKeyPoints(normalizedLines).take(5).toList();
+    if (bulletLines.isNotEmpty) {
+      return formatSummaryBullets(bulletLines);
+    }
+
+    final sentenceLines =
+        normalizeKeyPoints(TextRank.splitSentences(rawSummary))
+            .take(5)
+            .toList(growable: false);
+    if (sentenceLines.isNotEmpty) {
+      return formatSummaryBullets(sentenceLines);
+    }
+
+    return '';
   }
 }
 

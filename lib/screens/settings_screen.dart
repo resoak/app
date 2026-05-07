@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/app_settings.dart';
 import '../providers/app_settings_provider.dart';
 import '../providers/drive_backup_provider.dart';
-import '../services/background_image_service.dart';
 import '../theme/lecture_vault_theme.dart';
 import '../widgets/lecture_vault_background.dart';
 
@@ -24,12 +22,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _lectureLabelController = TextEditingController();
   final TextEditingController _timelineLabelController =
       TextEditingController();
-  final BackgroundImageService _backgroundImageService =
-      BackgroundImageService();
 
   bool _didHydrateProfile = false;
   bool _isSavingProfile = false;
-  bool _isManagingBackgroundImage = false;
 
   @override
   void dispose() {
@@ -110,76 +105,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _showMessage('已加入時間軸標籤');
   }
 
-  Future<void> _importBackgroundImage() async {
-    if (_isManagingBackgroundImage) {
-      return;
-    }
-
-    setState(() => _isManagingBackgroundImage = true);
-    try {
-      final currentPath = ref
-              .read(appSettingsProvider)
-              .asData
-              ?.value
-              .backgroundImagePath
-              .trim() ??
-          '';
-      final managedRelativePath =
-          await _backgroundImageService.pickAndImportBackgroundImage();
-      if (managedRelativePath == null || managedRelativePath.trim().isEmpty) {
-        return;
-      }
-
-      if (currentPath.isNotEmpty && currentPath != managedRelativePath) {
-        await _backgroundImageService.deleteManagedImage(currentPath);
-      }
-
-      await ref
-          .read(appSettingsProvider.notifier)
-          .updateBackgroundImagePath(managedRelativePath);
-      if (!mounted) {
-        return;
-      }
-      _showMessage('已匯入自訂背景圖片');
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showMessage('匯入背景圖片失敗：$error');
-    } finally {
-      if (mounted) {
-        setState(() => _isManagingBackgroundImage = false);
-      }
-    }
-  }
-
-  Future<void> _clearBackgroundImage(AppSettings settings) async {
-    if (_isManagingBackgroundImage ||
-        settings.backgroundImagePath.trim().isEmpty) {
-      return;
-    }
-
-    setState(() => _isManagingBackgroundImage = true);
-    try {
-      await _backgroundImageService
-          .deleteManagedImage(settings.backgroundImagePath);
-      await ref.read(appSettingsProvider.notifier).clearBackgroundImagePath();
-      if (!mounted) {
-        return;
-      }
-      _showMessage('已移除自訂背景圖片');
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showMessage('移除背景圖片失敗：$error');
-    } finally {
-      if (mounted) {
-        setState(() => _isManagingBackgroundImage = false);
-      }
-    }
-  }
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -195,6 +120,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       default:
         return model.name.toUpperCase();
     }
+  }
+
+  Widget _buildSummaryMethodSection(AppSettings settings) {
+    return _SettingsSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionHeader(
+            eyebrow: 'SUMMARY',
+            title: '預設摘要方式',
+            description:
+                '先儲存你偏好的摘要策略。預設仍維持目前的 extractive path；Android 本機 LLM 偏好會在後續執行期整合完成後接手。',
+          ),
+          const SizedBox(height: 16),
+          ...AppSettings.availableSummaryMethods.map(
+            (method) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _SummaryMethodTile(
+                method: method,
+                selected: settings.summaryMethod == method,
+                onTap: () {
+                  ref
+                      .read(appSettingsProvider.notifier)
+                      .updateSummaryMethod(method);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleDriveSignIn() async {
@@ -271,6 +227,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildDriveBackupSection() {
     final driveState = ref.watch(driveBackupControllerProvider);
+    final palette = context.lvPalette;
 
     return _SettingsSectionCard(
       child: driveState.when(
@@ -289,7 +246,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 14),
             Text(
               '$error',
-              style: lvMono(12, color: Colors.white.withValues(alpha: 0.74)),
+              style: context.lvMono(12, color: palette.textSecondary),
             ),
             const SizedBox(height: 12),
             TextButton(
@@ -297,7 +254,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ref.read(driveBackupControllerProvider.notifier).refresh(),
               child: Text(
                 '重新整理',
-                style: lvMono(12, color: LectureVaultColors.blueElectric),
+                style:
+                    context.lvMono(12, color: LectureVaultColors.blueElectric),
               ),
             ),
           ],
@@ -318,20 +276,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 state.account.isSignedIn
                     ? '目前帳號：${state.account.email.isEmpty ? state.account.label : state.account.email}'
                     : '目前尚未連線 Google 帳號',
-                style: lvMono(12, color: Colors.white.withValues(alpha: 0.88)),
+                style: context.lvMono(12, color: palette.textPrimary),
               ),
               const SizedBox(height: 8),
               Text(
                 latestBackup == null
                     ? '尚未找到雲端最新備份資訊。'
                     : '最新備份：${_formatDriveTimestamp(latestBackup.createdAt)} · ${latestBackup.audioFileCount} 個音檔 · ${latestBackup.totalBytes} bytes',
-                style: lvMono(11, color: LectureVaultColors.textMuted),
+                style: context.lvMono(11, color: palette.textMuted),
               ),
               if (lastError != null && lastError.trim().isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Text(
                   lastError,
-                  style: lvMono(11, color: LectureVaultColors.stopRed),
+                  style: context.lvMono(11, color: LectureVaultColors.stopRed),
                 ),
               ],
               const SizedBox(height: 14),
@@ -347,7 +305,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             : _handleDriveSignIn),
                     child: Text(
                       state.account.isSignedIn ? '登出 Google' : '登入 Google',
-                      style: lvMono(12, color: LectureVaultColors.blueElectric),
+                      style: context.lvMono(
+                        12,
+                        color: LectureVaultColors.blueElectric,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -355,7 +316,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         state.canRunDriveActions ? _handleDriveBackup : null,
                     child: Text(
                       '立即備份',
-                      style: lvMono(12, color: LectureVaultColors.purpleBright),
+                      style: context.lvMono(
+                        12,
+                        color: LectureVaultColors.purpleBright,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -364,7 +328,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         : null,
                     child: Text(
                       '還原最新備份',
-                      style: lvMono(12, color: LectureVaultColors.blueElectric),
+                      style: context.lvMono(
+                        12,
+                        color: LectureVaultColors.blueElectric,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -375,7 +342,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             .refresh(),
                     child: Text(
                       '重新整理狀態',
-                      style: lvMono(12, color: LectureVaultColors.textMuted),
+                      style: context.lvMono(12, color: palette.textMuted),
                     ),
                   ),
                 ],
@@ -390,6 +357,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final settingsState = ref.watch(appSettingsProvider);
+    final palette = context.lvPalette;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -404,21 +372,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('無法讀取設定', style: lvHeading(20)),
+                      Text('無法讀取設定', style: context.lvHeading(20)),
                       const SizedBox(height: 10),
                       Text(
                         '$error',
                         textAlign: TextAlign.center,
-                        style: lvMono(12,
-                            color: Colors.white.withValues(alpha: 0.7)),
+                        style: context.lvMono(12, color: palette.textSecondary),
                       ),
                       const SizedBox(height: 18),
                       TextButton(
                         onPressed: () => ref.invalidate(appSettingsProvider),
                         child: Text(
                           '重新載入',
-                          style: lvMono(12,
-                              color: LectureVaultColors.blueElectric),
+                          style: context.lvMono(
+                            12,
+                            color: LectureVaultColors.blueElectric,
+                          ),
                         ),
                       ),
                     ],
@@ -436,16 +405,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: LectureVaultColors.bgCard,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12),
-                          ),
+                          color: palette.surface,
+                          border: Border.all(color: palette.borderSubtle),
                         ),
                         child: IconButton(
                           onPressed: () => Navigator.pop(context),
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white,
+                            color: palette.textPrimary,
                             size: 20,
                           ),
                         ),
@@ -455,14 +422,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Profile & Settings', style: lvHeading(24)),
+                            Text(
+                              'Profile & Settings',
+                              style: context.lvHeading(24),
+                            ),
                             const SizedBox(height: 4),
                             Text(
                               '本機個人偏好、模型與背景設定',
-                              style: lvMono(
-                                11,
-                                color: LectureVaultColors.textMuted,
-                              ),
+                              style:
+                                  context.lvMono(11, color: palette.textMuted),
                             ),
                           ],
                         ),
@@ -509,10 +477,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             onPressed: _isSavingProfile ? null : _saveProfile,
                             child: Text(
                               _isSavingProfile ? '儲存中…' : '儲存個人資訊',
-                              style: lvMono(
+                              style: context.lvMono(
                                 12,
                                 color: _isSavingProfile
-                                    ? LectureVaultColors.textMuted
+                                    ? palette.textMuted
                                     : LectureVaultColors.blueElectric,
                                 weight: FontWeight.w600,
                               ),
@@ -548,22 +516,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                         .read(appSettingsProvider.notifier)
                                         .updatePreferredWhisperModel(model);
                                   },
-                                  labelStyle: lvMono(
+                                  labelStyle: context.lvMono(
                                     11,
                                     color:
                                         settings.preferredWhisperModel == model
                                             ? Colors.white
-                                            : LectureVaultColors.textMuted,
+                                            : palette.textMuted,
                                     weight: FontWeight.w600,
                                   ),
                                   selectedColor: LectureVaultColors.purple
                                       .withValues(alpha: 0.34),
                                   backgroundColor: Colors.transparent,
                                   side: BorderSide(
-                                    color: settings.preferredWhisperModel ==
-                                            model
-                                        ? LectureVaultColors.purpleBright
-                                        : Colors.white.withValues(alpha: 0.16),
+                                    color:
+                                        settings.preferredWhisperModel == model
+                                            ? LectureVaultColors.purpleBright
+                                            : palette.borderSubtle,
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(24),
@@ -575,6 +543,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  _buildSummaryMethodSection(settings),
                   const SizedBox(height: 18),
                   _EditableLabelSection(
                     eyebrow: 'LECTURE LABELS',
@@ -615,20 +585,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const _SectionHeader(
                           eyebrow: 'BACKGROUND',
                           title: '背景風格',
-                          description:
-                              '可匯入自己的背景圖片；若未設定，Home、錄音與講義詳情頁會回到下方內建風格。',
-                        ),
-                        const SizedBox(height: 16),
-                        _BackgroundImagePanel(
-                          fileLabel: settings.backgroundImagePath.trim().isEmpty
-                              ? '尚未設定自訂背景圖片'
-                              : p.basename(settings.backgroundImagePath),
-                          relativePath: settings.backgroundImagePath,
-                          isBusy: _isManagingBackgroundImage,
-                          onImport: _importBackgroundImage,
-                          onClear: settings.backgroundImagePath.trim().isEmpty
-                              ? null
-                              : () => _clearBackgroundImage(settings),
+                          description: '選擇你喜歡的介面風格顏色。',
                         ),
                         const SizedBox(height: 16),
                         ...AppBackgroundStyle.values.map(
@@ -658,6 +615,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildProfileHero(AppSettings settings) {
+    final palette = context.lvPalette;
+
     final name = settings.profile.displayName.trim().isEmpty
         ? 'LOCAL USER'
         : settings.profile.displayName.trim();
@@ -675,7 +634,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: palette.borderSubtle),
         boxShadow: [
           BoxShadow(
             color: LectureVaultColors.purple.withValues(alpha: 0.12),
@@ -691,12 +650,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.08),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+              color: palette.surface.withValues(alpha: 0.42),
+              border: Border.all(color: palette.borderSubtle),
             ),
             child: Text(
               settings.profile.initials,
-              style: lvHeading(20, weight: FontWeight.w800),
+              style: context.lvHeading(20, weight: FontWeight.w800),
             ),
           ),
           const SizedBox(width: 16),
@@ -704,12 +663,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: lvHeading(20, weight: FontWeight.w700)),
+                Text(name,
+                    style: context.lvHeading(20, weight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 Text(
                   subtitle,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.76),
+                    color: palette.textSecondary,
                     fontSize: 13,
                     height: 1.45,
                   ),
@@ -719,13 +679,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: palette.surface.withValues(alpha: 0.42),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     'LOCAL-FIRST · SQLITE ONLY',
-                    style:
-                        lvMono(10, color: Colors.white.withValues(alpha: 0.82)),
+                    style: context.lvMono(10, color: palette.textPrimary),
                   ),
                 ),
               ],
@@ -744,12 +703,14 @@ class _SettingsSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: LectureVaultColors.bgCard.withValues(alpha: 0.92),
+        color: palette.surface.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: palette.borderSubtle),
       ),
       child: child,
     );
@@ -769,17 +730,19 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(eyebrow, style: lvMono(10, color: LectureVaultColors.textMuted)),
+        Text(eyebrow, style: context.lvMono(10, color: palette.textMuted)),
         const SizedBox(height: 6),
-        Text(title, style: lvHeading(18, weight: FontWeight.w700)),
+        Text(title, style: context.lvHeading(18, weight: FontWeight.w700)),
         const SizedBox(height: 8),
         Text(
           description,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.68),
+            color: palette.textSecondary,
             fontSize: 13,
             height: 1.45,
           ),
@@ -804,29 +767,30 @@ class _SettingsTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: lvMono(10, color: LectureVaultColors.textMuted)),
+        Text(label, style: context.lvMono(10, color: palette.textMuted)),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           maxLines: maxLines,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: palette.textPrimary),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+            hintStyle:
+                TextStyle(color: palette.textMuted.withValues(alpha: 0.55)),
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.03),
+            fillColor: palette.inputFill,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              borderSide: BorderSide(color: palette.borderSubtle),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              borderSide: BorderSide(color: palette.borderSubtle),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -867,6 +831,8 @@ class _EditableLabelSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     return _SettingsSectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -915,7 +881,7 @@ class _EditableLabelSection extends StatelessWidget {
           if (labels.isEmpty)
             Text(
               emptyLabel,
-              style: lvMono(12, color: LectureVaultColors.textMuted),
+              style: context.lvMono(12, color: palette.textMuted),
             )
           else
             Wrap(
@@ -926,14 +892,14 @@ class _EditableLabelSection extends StatelessWidget {
                     (label) => InputChip(
                       label: Text(label),
                       onDeleted: () => onRemove(label),
-                      labelStyle: lvMono(
+                      labelStyle: context.lvMono(
                         11,
                         color: LectureVaultColors.blueElectric,
                         weight: FontWeight.w600,
                       ),
                       backgroundColor: LectureVaultColors.blueElectric
                           .withValues(alpha: 0.12),
-                      deleteIconColor: LectureVaultColors.textMuted,
+                      deleteIconColor: palette.textMuted,
                       side: BorderSide(
                         color: LectureVaultColors.blueElectric
                             .withValues(alpha: 0.24),
@@ -951,70 +917,83 @@ class _EditableLabelSection extends StatelessWidget {
   }
 }
 
-class _BackgroundImagePanel extends StatelessWidget {
-  const _BackgroundImagePanel({
-    required this.fileLabel,
-    required this.relativePath,
-    required this.isBusy,
-    required this.onImport,
-    required this.onClear,
+class _SummaryMethodTile extends StatelessWidget {
+  const _SummaryMethodTile({
+    required this.method,
+    required this.selected,
+    required this.onTap,
   });
 
-  final String fileLabel;
-  final String relativePath;
-  final bool isBusy;
-  final VoidCallback onImport;
-  final VoidCallback? onClear;
+  final AppSummaryMethod method;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
+    final palette = context.lvPalette;
+    final accent = method == AppSummaryMethod.extractive
+        ? LectureVaultColors.blueElectric
+        : LectureVaultColors.purpleBright;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? palette.surfaceSelected : palette.surfaceAlt,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? palette.borderStrong : palette.borderSubtle,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  gradient: LinearGradient(
-                    colors: [
-                      LectureVaultColors.blueElectric.withValues(alpha: 0.24),
-                      LectureVaultColors.purple.withValues(alpha: 0.24),
-                    ],
-                  ),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
-                child: const Icon(
-                  Icons.wallpaper_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      fileLabel,
-                      style: lvHeading(15, weight: FontWeight.w700),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          method.label,
+                          style: context.lvHeading(15, weight: FontWeight.w700),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.24),
+                            ),
+                          ),
+                          child: Text(
+                            method.badgeLabel,
+                            style: context.lvMono(
+                              9,
+                              color: accent,
+                              weight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     Text(
-                      '匯入後會套用到主要畫面，系統仍會保留深色覆蓋層，避免文字被背景吃掉。',
+                      method.description,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.68),
+                        color: palette.textSecondary,
                         fontSize: 12,
                         height: 1.45,
                       ),
@@ -1022,61 +1001,16 @@ class _BackgroundImagePanel extends StatelessWidget {
                   ],
                 ),
               ),
-            ],
-          ),
-          if (relativePath.trim().isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              relativePath,
-              style: lvMono(10, color: LectureVaultColors.textMuted),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              TextButton.icon(
-                onPressed: isBusy ? null : onImport,
-                icon: Icon(
-                  Icons.upload_file_rounded,
-                  color: isBusy
-                      ? LectureVaultColors.textMuted
-                      : LectureVaultColors.blueElectric,
-                ),
-                label: Text(
-                  isBusy ? '處理中…' : '匯入背景圖片',
-                  style: lvMono(
-                    12,
-                    color: isBusy
-                        ? LectureVaultColors.textMuted
-                        : LectureVaultColors.blueElectric,
-                    weight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: isBusy ? null : onClear,
-                icon: Icon(
-                  Icons.delete_outline_rounded,
-                  color: onClear == null
-                      ? LectureVaultColors.textMuted
-                      : LectureVaultColors.stopRed,
-                ),
-                label: Text(
-                  '清除背景圖',
-                  style: lvMono(
-                    12,
-                    color: onClear == null
-                        ? LectureVaultColors.textMuted
-                        : LectureVaultColors.stopRed,
-                    weight: FontWeight.w600,
-                  ),
-                ),
+              const SizedBox(width: 12),
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
+                color: selected ? accent : palette.textMuted,
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1095,6 +1029,8 @@ class _BackgroundStyleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1104,14 +1040,10 @@ class _BackgroundStyleTile extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: selected
-                ? LectureVaultColors.bgCardActive
-                : Colors.white.withValues(alpha: 0.02),
+            color: selected ? palette.surfaceSelected : palette.surfaceAlt,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: selected
-                  ? LectureVaultColors.borderActive
-                  : Colors.white.withValues(alpha: 0.08),
+              color: selected ? palette.borderStrong : palette.borderSubtle,
             ),
           ),
           child: Row(
@@ -1123,12 +1055,12 @@ class _BackgroundStyleTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(style.label,
-                        style: lvHeading(15, weight: FontWeight.w700)),
+                        style: context.lvHeading(15, weight: FontWeight.w700)),
                     const SizedBox(height: 6),
                     Text(
                       style.description,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.68),
+                        color: palette.textSecondary,
                         fontSize: 12,
                         height: 1.45,
                       ),
@@ -1143,7 +1075,7 @@ class _BackgroundStyleTile extends StatelessWidget {
                     : Icons.radio_button_off_rounded,
                 color: selected
                     ? LectureVaultColors.purpleBright
-                    : LectureVaultColors.textMuted,
+                    : palette.textMuted,
               ),
             ],
           ),
@@ -1161,12 +1093,12 @@ class _BackgroundPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final decoration = switch (style) {
-      AppBackgroundStyle.black => BoxDecoration(
-          color: Colors.black,
+      AppBackgroundStyle.darkDefault => BoxDecoration(
+          color: LectureVaultPalette.black.backgroundBase,
           borderRadius: BorderRadius.circular(16),
         ),
       AppBackgroundStyle.white => BoxDecoration(
-          color: Colors.white,
+          color: LectureVaultPalette.white.backgroundBase,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: Colors.black.withValues(alpha: 0.12),
@@ -1178,65 +1110,7 @@ class _BackgroundPreview extends StatelessWidget {
       width: 72,
       height: 72,
       decoration: decoration,
-      child: switch (style) {
-        AppBackgroundStyle.black =>
-          const CustomPaint(painter: _PreviewDarkCorePainter()),
-        AppBackgroundStyle.white => CustomPaint(
-            painter: _PreviewGridPainter(
-              color: Colors.black.withValues(alpha: 0.08),
-            ),
-          ),
-      },
+      child: const SizedBox.expand(),
     );
-  }
-}
-
-class _PreviewDarkCorePainter extends CustomPainter {
-  const _PreviewDarkCorePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.12)
-      ..strokeWidth = 1;
-    for (double y = 8; y < size.height; y += 14) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y + 16), linePaint);
-    }
-
-    final ringPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = LectureVaultColors.purpleBright.withValues(alpha: 0.22);
-    final center = Offset(size.width * 0.78, size.height * 0.26);
-    canvas.drawCircle(center, 14, ringPaint);
-    canvas.drawCircle(center, 26, ringPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _PreviewGridPainter extends CustomPainter {
-  const _PreviewGridPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-
-    for (double dx = 12; dx < size.width; dx += 12) {
-      canvas.drawLine(Offset(dx, 0), Offset(dx, size.height), paint);
-    }
-    for (double dy = 12; dy < size.height; dy += 12) {
-      canvas.drawLine(Offset(0, dy), Offset(size.width, dy), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _PreviewGridPainter oldDelegate) {
-    return oldDelegate.color != color;
   }
 }

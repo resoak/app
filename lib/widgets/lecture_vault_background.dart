@@ -1,11 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/app_settings.dart';
-import '../providers/app_settings_provider.dart';
-import '../services/background_image_service.dart';
+import '../theme/lecture_vault_theme.dart';
 
 class LectureVaultBackground extends ConsumerWidget {
   const LectureVaultBackground({
@@ -15,127 +11,45 @@ class LectureVaultBackground extends ConsumerWidget {
 
   final Widget child;
 
-  static final BackgroundImageService _backgroundImageService =
-      BackgroundImageService();
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(
-      appSettingsProvider.select(
-        (state) => state.asData?.value ?? AppSettings.defaults(),
+    final theme = Theme.of(context);
+    final palette = theme.lectureVaultPalette;
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      // 直接使用主題底色，確保切換時百分之百同步，消除閃爍
+      color: palette.backgroundBase,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (isDark)
+            _BackgroundGradient(palette: palette),
+          child,
+        ],
       ),
     );
-    final backgroundStyle = settings.backgroundStyle;
-    final backgroundImagePath = settings.backgroundImagePath.trim();
+  }
+}
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        IgnorePointer(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: backgroundImagePath.isEmpty
-                ? _BackgroundFill(
-                    key: ValueKey('style-${backgroundStyle.name}'),
-                    style: backgroundStyle,
-                  )
-                : _ManagedImageBackground(
-                    key: ValueKey('image-$backgroundImagePath'),
-                    managedImagePath: backgroundImagePath,
-                    fallbackStyle: backgroundStyle,
-                    backgroundImageService: _backgroundImageService,
-                  ),
-          ),
+class _BackgroundGradient extends StatelessWidget {
+  const _BackgroundGradient({required this.palette});
+  final LectureVaultPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.center,
+          radius: 1.4,
+          colors: [
+            palette.surface,        // 中心：較淡的深藍色 (Slate 900)
+            palette.backgroundBase, // 邊緣：極深色 (Slate 950)
+          ],
+          stops: const [0.0, 0.9],
         ),
-        child,
-      ],
-    );
-  }
-}
-
-class _ManagedImageBackground extends StatefulWidget {
-  const _ManagedImageBackground({
-    super.key,
-    required this.managedImagePath,
-    required this.fallbackStyle,
-    required this.backgroundImageService,
-  });
-
-  final String managedImagePath;
-  final AppBackgroundStyle fallbackStyle;
-  final BackgroundImageService backgroundImageService;
-
-  @override
-  State<_ManagedImageBackground> createState() =>
-      _ManagedImageBackgroundState();
-}
-
-class _ManagedImageBackgroundState extends State<_ManagedImageBackground> {
-  late Future<File?> _imageFile;
-
-  @override
-  void initState() {
-    super.initState();
-    _imageFile = _resolveImageFile();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ManagedImageBackground oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.managedImagePath != widget.managedImagePath ||
-        oldWidget.backgroundImageService != widget.backgroundImageService) {
-      _imageFile = _resolveImageFile();
-    }
-  }
-
-  Future<File?> _resolveImageFile() async {
-    final resolvedPath = await widget.backgroundImageService
-        .resolveManagedImagePath(widget.managedImagePath);
-    final file = File(resolvedPath);
-    if (await file.exists()) {
-      return file;
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<File?>(
-      future: _imageFile,
-      builder: (context, snapshot) {
-        final file = snapshot.data;
-        if (file == null) {
-          return _BackgroundFill(style: widget.fallbackStyle);
-        }
-
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            image: DecorationImage(
-              image: FileImage(file),
-              fit: BoxFit.cover,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _BackgroundFill extends StatelessWidget {
-  const _BackgroundFill({
-    super.key,
-    required this.style,
-  });
-
-  final AppBackgroundStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: switch (style) {
-        AppBackgroundStyle.black => Colors.black,
-        AppBackgroundStyle.white => Colors.white,
-      },
+      ),
     );
   }
 }

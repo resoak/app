@@ -167,6 +167,8 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: LectureVaultBackground(
@@ -191,7 +193,8 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                     ),
                     child: Text(
                       'SECURE_OFFLINE_RECORDING',
-                      style: lvMono(10, color: LectureVaultColors.statusGreen),
+                      style: context.lvMono(10,
+                          color: LectureVaultColors.statusGreen),
                     ),
                   ),
                 ),
@@ -201,7 +204,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                   style: GoogleFonts.jetBrainsMono(
                     fontSize: 44,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white,
+                    color: palette.textPrimary,
                     letterSpacing: 2,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
@@ -209,7 +212,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                 const SizedBox(height: 14),
                 Text(
                   'RECORDING AUDIO...',
-                  style: lvMono(11, color: LectureVaultColors.textMuted),
+                  style: context.lvMono(11, color: palette.textMuted),
                 ),
                 const SizedBox(height: 28),
                 Expanded(
@@ -239,7 +242,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.55),
+                            color: palette.textSecondary,
                             fontSize: 13,
                             height: 1.45,
                           ),
@@ -282,7 +285,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                     const SizedBox(height: 14),
                     Text(
                       _startupError == null ? 'STOP & GENERATE NOTE' : 'CLOSE',
-                      style: lvMono(10, color: LectureVaultColors.textMuted),
+                      style: context.lvMono(10, color: palette.textMuted),
                     ),
                   ],
                 ),

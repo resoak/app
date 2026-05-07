@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lecture_vault/services/android_local_llm_runtime_service.dart';
 import 'package:lecture_vault/services/summary_service.dart';
 
 void main() {
@@ -50,4 +51,99 @@ void main() {
       expect(summary, isNot(equals('• $transcript。')));
     });
   });
+
+  group('AndroidLocalLlmSummaryService', () {
+    test('returns formatted local LLM bullets when runtime succeeds', () async {
+      final service = AndroidLocalLlmSummaryService(
+        runtime: const _SuccessfulLocalLlmRuntime(
+          '1. 資料庫索引能加速查詢\n2. 但會增加寫入成本',
+        ),
+        fallbackService: const _ThrowingSummaryService(),
+      );
+
+      final summary = await service.summarizeTranscript(
+        '今天課堂比較資料庫索引帶來的查詢優勢與寫入成本。',
+      );
+
+      expect(summary, '• 資料庫索引能加速查詢。\n• 但會增加寫入成本。');
+    });
+
+    test('falls back when Android local runtime is unavailable', () async {
+      final service = AndroidLocalLlmSummaryService(
+        runtime: const _UnavailableLocalLlmRuntime(),
+        fallbackService:
+            const _RecordingSummaryService('• extractive fallback。'),
+      );
+
+      final summary = await service.summarizeTranscript(
+        '今天老師講解圖論中的最短路徑與鬆弛操作。',
+      );
+
+      expect(summary, '• extractive fallback。');
+    });
+
+    test('falls back when Android local runtime throws', () async {
+      final service = AndroidLocalLlmSummaryService(
+        runtime: const _ThrowingLocalLlmRuntime(),
+        fallbackService:
+            const _RecordingSummaryService('• fallback after failure。'),
+      );
+
+      final summary = await service.summarizeTranscript(
+        '今天老師整理 transaction isolation level 的差異。',
+      );
+
+      expect(summary, '• fallback after failure。');
+    });
+  });
+}
+
+class _SuccessfulLocalLlmRuntime implements LocalLlmTranscriptSummaryRuntime {
+  const _SuccessfulLocalLlmRuntime(this.summary);
+
+  final String summary;
+
+  @override
+  Future<LocalLlmSummaryAttempt> summarizeTranscript(String transcript) async {
+    return LocalLlmSummaryAttempt.success(summary);
+  }
+}
+
+class _UnavailableLocalLlmRuntime implements LocalLlmTranscriptSummaryRuntime {
+  const _UnavailableLocalLlmRuntime();
+
+  @override
+  Future<LocalLlmSummaryAttempt> summarizeTranscript(String transcript) async {
+    return const LocalLlmSummaryAttempt.unavailable(
+      reason: LocalLlmUnavailableReason.missingBundledModel,
+      message: 'Bundled GGUF model asset is missing.',
+    );
+  }
+}
+
+class _ThrowingLocalLlmRuntime implements LocalLlmTranscriptSummaryRuntime {
+  const _ThrowingLocalLlmRuntime();
+
+  @override
+  Future<LocalLlmSummaryAttempt> summarizeTranscript(String transcript) {
+    throw StateError('llm crashed');
+  }
+}
+
+class _RecordingSummaryService implements SummaryService {
+  const _RecordingSummaryService(this.value);
+
+  final String value;
+
+  @override
+  Future<String> summarizeTranscript(String transcript) async => value;
+}
+
+class _ThrowingSummaryService implements SummaryService {
+  const _ThrowingSummaryService();
+
+  @override
+  Future<String> summarizeTranscript(String transcript) {
+    throw StateError('fallback should not run');
+  }
 }
