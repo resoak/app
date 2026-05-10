@@ -232,26 +232,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _deleteLecture(Lecture lecture) async {
+    final palette = context.lvPalette;
+    final scheme = Theme.of(context).colorScheme;
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: LectureVaultColors.bgCard,
+        backgroundColor: palette.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('確認刪除', style: lvHeading(18)),
+        title: Text('確認刪除', style: ctx.lvHeading(18)),
         content: Text(
           '刪除「${lecture.title}」？\n錄音檔案也會一併刪除。',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+          style: TextStyle(color: palette.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('取消',
-                style: lvMono(14, color: LectureVaultColors.textMuted)),
+            child: Text('取消', style: ctx.lvMono(14, color: palette.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('刪除',
-                style: lvMono(14, color: LectureVaultColors.stopRed)),
+            child: Text('刪除', style: ctx.lvMono(14, color: scheme.error)),
           ),
         ],
       ),
@@ -263,24 +264,73 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _refreshData();
   }
 
+  Future<void> _renameLecture(Lecture lecture) async {
+    final palette = context.lvPalette;
+
+    final controller = TextEditingController(text: lecture.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: palette.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('重新命名', style: ctx.lvHeading(18)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: '輸入新名稱',
+            hintStyle: TextStyle(color: palette.textMuted),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: palette.borderSubtle),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: LectureVaultColors.blueElectric),
+            ),
+          ),
+          style: context.lvMono(14, color: palette.textPrimary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('取消', style: ctx.lvMono(14, color: palette.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text('儲存',
+                style: ctx.lvMono(14, color: LectureVaultColors.blueElectric)),
+          ),
+        ],
+      ),
+    );
+
+    if (newTitle == null || newTitle.isEmpty || newTitle == lecture.title)
+      return;
+
+    await _dbService.updateLecture(lecture.copyWith(title: newTitle));
+  }
+
   Future<void> _editTag(String oldTag) async {
+    final palette = context.lvPalette;
+
     final controller = TextEditingController(text: oldTag);
     final newTag = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: LectureVaultColors.bgCard,
+        backgroundColor: palette.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('編輯標籤', style: lvHeading(18)),
+        title: Text('編輯標籤', style: ctx.lvHeading(18)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: palette.textPrimary),
           decoration: InputDecoration(
             labelText: '標籤名稱',
-            labelStyle: const TextStyle(color: LectureVaultColors.textMuted),
+            labelStyle: TextStyle(color: palette.textMuted),
             enabledBorder: UnderlineInputBorder(
-              borderSide:
-                  BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+              borderSide: BorderSide(color: palette.borderSubtle),
             ),
             focusedBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: LectureVaultColors.purpleBright),
@@ -290,13 +340,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('取消',
-                style: lvMono(14, color: LectureVaultColors.textMuted)),
+            child: Text('取消', style: ctx.lvMono(14, color: palette.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: Text('儲存',
-                style: lvMono(14, color: LectureVaultColors.purpleBright)),
+                style: ctx.lvMono(14, color: LectureVaultColors.purpleBright)),
           ),
         ],
       ),
@@ -318,9 +367,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _openCreateLectureSheet() async {
+    final palette = context.lvPalette;
+
     final action = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: LectureVaultColors.bgCard,
+      backgroundColor: palette.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -330,21 +381,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.mic_rounded, color: Colors.white),
-                title: Text('開始錄音', style: lvHeading(16)),
+                leading: Icon(Icons.mic_rounded, color: palette.textPrimary),
+                title: Text('開始錄音', style: context.lvHeading(16)),
                 subtitle: Text(
                   '建立新的現場錄音並在背景轉錄',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                  style: TextStyle(color: palette.textSecondary),
                 ),
                 onTap: () => Navigator.pop(context, 'record'),
               ),
               ListTile(
                 leading:
-                    const Icon(Icons.audio_file_rounded, color: Colors.white),
-                title: Text('匯入音檔', style: lvHeading(16)),
+                    Icon(Icons.audio_file_rounded, color: palette.textPrimary),
+                title: Text('匯入音檔', style: context.lvHeading(16)),
                 subtitle: Text(
                   '複製本機音檔到受管儲存並開始轉錄',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                  style: TextStyle(color: palette.textSecondary),
                 ),
                 onTap: () => Navigator.pop(context, 'import'),
               ),
@@ -433,25 +484,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             AppSettings.defaultWhisperModel,
       ),
     );
+    final palette = context.lvPalette;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBody: true,
-      body: LectureVaultBackground(
-        child: SafeArea(
+    return LectureVaultBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        extendBodyBehindAppBar: true, // 確保背景延伸到頂部狀態欄
+        body: SafeArea(
           bottom: false,
           child: _bottomIndex == 0
               ? _buildHomeBody(selectedWhisperModel)
               : _buildSearchBody(),
         ),
+        floatingActionButton: _buildFab(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        bottomNavigationBar: _buildBottomBar(palette),
       ),
-      floatingActionButton: _buildFab(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: _buildBottomBar(),
     );
   }
 
   Widget _buildHomeBody(WhisperModel selectedWhisperModel) {
+    final palette = context.lvPalette;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       child: Column(
@@ -464,7 +519,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('LectureVault', style: lvHeading(26)),
+                    Text('LectureVault', style: context.lvHeading(26)),
                     const SizedBox(height: 6),
                     Row(
                       children: [
@@ -485,8 +540,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const SizedBox(width: 8),
                         Text(
                           'LOCAL_AI_READY',
-                          style:
-                              lvMono(11, color: LectureVaultColors.statusGreen),
+                          style: context.lvMono(
+                            11,
+                            color: LectureVaultColors.statusGreen,
+                          ),
                         ),
                       ],
                     ),
@@ -496,9 +553,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                  color: LectureVaultColors.bgCard,
+                  border: Border.all(color: palette.borderSubtle),
+                  color: palette.surface,
                 ),
                 child: IconButton(
                   onPressed: () {
@@ -509,8 +565,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.person_outline_rounded,
-                      color: Colors.white),
+                  icon: Icon(
+                    Icons.person_outline_rounded,
+                    color: palette.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -535,16 +593,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onSelected: (_) => _setFilter(e.key),
                     showCheckmark: false,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    labelStyle: lvMono(12,
-                        color: selected
-                            ? Colors.white
-                            : LectureVaultColors.textMuted),
+                    labelStyle: context.lvMono(
+                      12,
+                      color: selected ? Colors.white : palette.textMuted,
+                    ),
                     selectedColor: LectureVaultColors.purple,
                     backgroundColor: Colors.transparent,
                     side: BorderSide(
                       color: selected
                           ? LectureVaultColors.purpleBright
-                          : Colors.white.withValues(alpha: 0.2),
+                          : palette.borderSubtle,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24),
@@ -578,6 +636,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildEmptyState() {
     final bool isSearchOrFilter =
         _filterKey != 'all' || _searchQuery.isNotEmpty;
+    final palette = context.lvPalette;
+
     return Center(
       child: SingleChildScrollView(
         child: Column(
@@ -587,23 +647,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: LectureVaultColors.bgCard,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
+                color: palette.surface,
+                border: Border.all(color: palette.borderSubtle),
               ),
               child: Icon(
                 isSearchOrFilter
                     ? Icons.search_off_rounded
                     : Icons.mic_none_rounded,
                 size: 64,
-                color: LectureVaultColors.textMuted.withValues(alpha: 0.5),
+                color: palette.textMuted.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 24),
             Text(
               isSearchOrFilter ? '找不到符合的內容' : '這裡空空如也',
-              style: lvHeading(18),
+              style: context.lvHeading(18),
             ),
             const SizedBox(height: 8),
             Text(
@@ -611,7 +669,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ? '請嘗試更換標籤或關鍵字'
                   : '點擊下方的 + 按鈕開始您的第一份錄音\n所有 AI 運算皆在本地完成',
               textAlign: TextAlign.center,
-              style: lvMono(12, color: LectureVaultColors.textMuted),
+              style: context.lvMono(12, color: palette.textMuted),
             ),
             if (!isSearchOrFilter) ...[
               const SizedBox(height: 32),
@@ -631,8 +689,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         size: 14, color: LectureVaultColors.statusGreen),
                     const SizedBox(width: 8),
                     Text('隱私保護中：無外部伺服器存取',
-                        style:
-                            lvMono(10, color: LectureVaultColors.statusGreen)),
+                        style: context.lvMono(
+                          10,
+                          color: LectureVaultColors.statusGreen,
+                        )),
                   ],
                 ),
               ),
@@ -644,26 +704,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildWhisperModelSelector(WhisperModel selectedWhisperModel) {
+    final palette = context.lvPalette;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       decoration: BoxDecoration(
-        color: LectureVaultColors.bgCard,
+        color: palette.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: palette.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'WHISPER MODEL',
-            style: lvMono(10, color: LectureVaultColors.textMuted),
+            style: context.lvMono(10, color: palette.textMuted),
           ),
           const SizedBox(height: 6),
           Text(
             '新錄音將使用所選模型進行背景轉錄',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.62),
+              color: palette.textSecondary,
               fontSize: 12,
               height: 1.35,
             ),
@@ -684,10 +746,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       .updatePreferredWhisperModel(model);
                 },
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                labelStyle: lvMono(
+                labelStyle: context.lvMono(
                   11,
-                  color:
-                      isSelected ? Colors.white : LectureVaultColors.textMuted,
+                  color: isSelected ? Colors.white : palette.textMuted,
                   weight: FontWeight.w600,
                 ),
                 selectedColor:
@@ -696,7 +757,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 side: BorderSide(
                   color: isSelected
                       ? LectureVaultColors.purpleBright
-                      : Colors.white.withValues(alpha: 0.16),
+                      : palette.borderSubtle,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -710,38 +771,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildSearchBody() {
+    final palette = context.lvPalette;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('搜尋', style: lvHeading(22)),
+          Text('搜尋', style: context.lvHeading(22)),
           const SizedBox(height: 12),
           TextField(
             autofocus: true,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: palette.textPrimary),
             decoration: InputDecoration(
               hintText: '標題或轉錄內容…',
-              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+              hintStyle:
+                  TextStyle(color: palette.textMuted.withValues(alpha: 0.55)),
               filled: true,
-              fillColor: LectureVaultColors.bgCard,
+              fillColor: palette.surface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide:
-                    BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                borderSide: BorderSide(color: palette.borderSubtle),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide:
-                    BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                borderSide: BorderSide(color: palette.borderSubtle),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide:
                     const BorderSide(color: LectureVaultColors.purpleBright),
               ),
-              prefixIcon:
-                  const Icon(Icons.search, color: LectureVaultColors.textMuted),
+              prefixIcon: Icon(Icons.search, color: palette.textMuted),
               suffixIcon: _isSemanticSearching
                   ? const SizedBox(
                       width: 20,
@@ -757,8 +818,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     )
                   : (_searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.close,
-                              color: LectureVaultColors.textMuted),
+                          icon: Icon(Icons.close, color: palette.textMuted),
                           onPressed: () {
                             _setSearchQuery('');
                             FocusScope.of(context).unfocus();
@@ -787,6 +847,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildLectureCard(Lecture lecture, bool isSelected) {
+    final palette = context.lvPalette;
+
     final sizeLabel =
         lecture.id != null ? (_fileSizeById[lecture.id!] ?? '—') : '—';
     final transcriptionState = lecture.id == null
@@ -825,14 +887,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.fromLTRB(18, 16, 12, 16),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? LectureVaultColors.bgCardActive
-                  : LectureVaultColors.bgCard,
+              color: isSelected ? palette.surfaceSelected : palette.surface,
               borderRadius: BorderRadius.circular(26),
               border: Border.all(
-                color: isSelected
-                    ? LectureVaultColors.borderActive
-                    : Colors.white.withValues(alpha: 0.06),
+                color: isSelected ? palette.borderStrong : palette.borderSubtle,
                 width: isSelected ? 1.5 : 1,
               ),
               boxShadow: isSelected
@@ -853,7 +911,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     Text(
                       lecture.date,
-                      style: lvMono(10, color: LectureVaultColors.textMuted),
+                      style: context.lvMono(10, color: palette.textMuted),
                     ),
                     const Spacer(),
                     if (isTranscribing)
@@ -866,8 +924,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '轉錄中 ${(transcriptionState!.progress * 100).round()}%',
-                          style: lvMono(10,
+                          '轉錄中 ${((transcriptionState?.progress ?? 0) * 100).round()}%',
+                          style: context.lvMono(10,
                               color: LectureVaultColors.blueElectric),
                         ),
                       )
@@ -883,7 +941,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                         child: Text(
                           '轉錄失敗',
-                          style: lvMono(10, color: LectureVaultColors.stopRed),
+                          style: context.lvMono(10,
+                              color: LectureVaultColors.stopRed),
                         ),
                       )
                     else if (hasCompletedSummary)
@@ -897,24 +956,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                         child: Text(
                           '已總結',
-                          style: lvMono(10,
+                          style: context.lvMono(10,
                               color: LectureVaultColors.purpleBright),
                         ),
                       ),
                     PopupMenuButton<String>(
                       icon: Icon(
                         Icons.more_horiz_rounded,
-                        color: Colors.white.withValues(alpha: 0.45),
+                        color: palette.textMuted,
                       ),
-                      color: LectureVaultColors.bgCard,
+                      color: palette.surface,
                       onSelected: (v) {
                         if (v == 'delete') _deleteLecture(lecture);
+                        if (v == 'rename') _renameLecture(lecture);
                       },
                       itemBuilder: (context) => [
                         PopupMenuItem(
+                          value: 'rename',
+                          child: Text('重新命名',
+                              style: context.lvMono(13,
+                                  color: palette.textPrimary)),
+                        ),
+                        PopupMenuItem(
                           value: 'delete',
                           child: Text('刪除',
-                              style: lvMono(13,
+                              style: context.lvMono(13,
                                   color: LectureVaultColors.stopRed)),
                         ),
                       ],
@@ -924,7 +990,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 const SizedBox(height: 10),
                 Text(
                   lecture.title,
-                  style: lvHeading(17, weight: FontWeight.w600),
+                  style: context.lvHeading(17, weight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -936,7 +1002,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const SizedBox(width: 6),
                     Text(
                       FormatUtils.formatDuration(lecture.durationSeconds),
-                      style: lvMono(12, color: LectureVaultColors.textMuted),
+                      style: context.lvMono(12, color: palette.textMuted),
                     ),
                     const SizedBox(width: 18),
                     Icon(Icons.sd_storage_outlined,
@@ -946,18 +1012,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const SizedBox(width: 6),
                     Text(
                       sizeLabel,
-                      style: lvMono(12, color: LectureVaultColors.textMuted),
+                      style: context.lvMono(12, color: palette.textMuted),
                     ),
                   ],
                 ),
-                if (isTranscribing) ...[
+                if (isTranscribing && transcriptionState != null) ...[
                   const SizedBox(height: 12),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: LinearProgressIndicator(
                       value: transcriptionState!.progress.clamp(0.0, 1.0),
                       minHeight: 8,
-                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                      backgroundColor: palette.borderSubtle,
                       valueColor: const AlwaysStoppedAnimation<Color>(
                         LectureVaultColors.blueElectric,
                       ),
@@ -966,7 +1032,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'AI 正在背景轉錄這段錄音',
-                    style: lvMono(11, color: LectureVaultColors.textMuted),
+                    style: context.lvMono(11, color: palette.textMuted),
                   ),
                 ],
                 if (lecture.tags.isNotEmpty) ...[
@@ -991,7 +1057,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                         child: Text(
                           '#$trimmed',
-                          style: lvMono(11,
+                          style: context.lvMono(11,
                               color: LectureVaultColors.blueElectric),
                         ),
                       );
@@ -1041,11 +1107,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildBottomBar() {
+  Widget _buildBottomBar(LectureVaultPalette palette) {
     return BottomAppBar(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      color: const Color(0xFF0B1120),
+      color: palette.chromeSurface,
       shape: const CircularNotchedRectangle(),
       notchMargin: 10,
       child: Row(
@@ -1054,9 +1120,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => _setBottomIndex(0),
             icon: Icon(
               Icons.home_rounded,
-              color: _bottomIndex == 0
-                  ? Colors.white
-                  : LectureVaultColors.textMuted,
+              color:
+                  _bottomIndex == 0 ? palette.textPrimary : palette.textMuted,
             ),
           ),
           const Spacer(),
@@ -1064,9 +1129,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => _setBottomIndex(1),
             icon: Icon(
               Icons.search_rounded,
-              color: _bottomIndex == 1
-                  ? Colors.white
-                  : LectureVaultColors.textMuted,
+              color:
+                  _bottomIndex == 1 ? palette.textPrimary : palette.textMuted,
             ),
           ),
         ],

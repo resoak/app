@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
+import '../models/app_settings.dart';
 import '../models/lecture.dart';
 import '../services/background_transcription_service.dart';
 import '../services/summary_service.dart';
+import 'app_settings_provider.dart';
 import 'drive_backup_provider.dart';
 
 typedef BackgroundLectureTranscriber = Future<void> Function(
@@ -38,14 +40,35 @@ class TranscriptionState {
 
 final backgroundLectureTranscriberProvider =
     Provider<BackgroundLectureTranscriber>((ref) {
-  return (lecture, {whisperModel = WhisperModel.base}) async {
+  final summaryService = ref.watch(selectedSummaryServiceProvider);
+  return (lecture, {whisperModel = WhisperModel.tiny}) async {
     return BackgroundTranscriptionService(
-      summaryService: const MiniLmSummaryService(),
+      summaryService: summaryService,
     ).transcribeLecture(
       lecture,
       whisperModel: whisperModel,
     );
   };
+});
+
+final extractiveSummaryServiceProvider = Provider<SummaryService>((ref) {
+  return const MiniLmSummaryService();
+});
+
+final androidLocalLlmSummaryServiceProvider = Provider<SummaryService>((ref) {
+  return AndroidLocalLlmSummaryService();
+});
+
+final selectedSummaryServiceProvider = Provider<SummaryService>((ref) {
+  final settings =
+      ref.watch(appSettingsProvider).asData?.value ?? AppSettings.defaults();
+
+  switch (settings.summaryMethod) {
+    case AppSummaryMethod.extractive:
+      return ref.read(extractiveSummaryServiceProvider);
+    case AppSummaryMethod.androidLocalLlm:
+      return ref.read(androidLocalLlmSummaryServiceProvider);
+  }
 });
 
 final transcriptionCleanupDelayProvider = Provider<Duration>((ref) {

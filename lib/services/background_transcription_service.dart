@@ -17,7 +17,7 @@ class BackgroundTranscriptionService {
     SttServiceFactory? sttServiceFactory,
     SentenceEmbeddingRuntime? embeddingService,
   })  : _dbService = dbService ?? DbService(),
-        _summaryService = summaryService ?? const MiniLmSummaryService(),
+        _summaryService = summaryService ?? AndroidLocalLlmSummaryService(),
         _embeddingService = embeddingService ?? const MiniLmRuntimeService(),
         _sttServiceFactory = sttServiceFactory ??
             ((whisperModel) => SttService(whisperModel: whisperModel));
@@ -29,7 +29,7 @@ class BackgroundTranscriptionService {
 
   Future<void> transcribeLecture(
     Lecture lecture, {
-    WhisperModel whisperModel = WhisperModel.base,
+    WhisperModel whisperModel = WhisperModel.tiny,
   }) async {
     final sttService = _sttServiceFactory(whisperModel);
     final currentLecture = lecture.copyWith(
@@ -51,7 +51,14 @@ class BackgroundTranscriptionService {
       }
 
       debugPrint('開始轉錄音檔: $audioPath');
-      await sttService.transcribeFile(audioPath);
+      
+      try {
+        await sttService.transcribeFile(audioPath);
+      } catch (e, stack) {
+        debugPrint('轉錄失敗: $e');
+        debugPrint('堆疊: $stack');
+        rethrow;
+      }
 
       final transcript = sttService.persistedTranscript;
       final timeline = sttService.timeline;

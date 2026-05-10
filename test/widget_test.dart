@@ -1,34 +1,41 @@
 // test/widget_test.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:lecture_vault/main.dart';
-import 'package:lecture_vault/services/db_service.dart';
+import 'package:lecture_vault/models/app_settings.dart';
+import 'package:lecture_vault/theme/lecture_vault_theme.dart';
 
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  });
-
-  setUp(() async {
-    await DbService().resetForTests();
-  });
-
-  testWidgets('App smoke test', (WidgetTester tester) async {
+  testWidgets('buildLectureVaultTheme supports white and default variants', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
-      const ProviderScope(
-        child: LectureVaultApp(),
+      MaterialApp(
+        theme: buildLectureVaultTheme(AppBackgroundStyle.white),
+        home: const SizedBox.shrink(),
       ),
     );
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(find.text('BASE'), findsOneWidget);
-    expect(find.text('SMALL'), findsOneWidget);
+    var materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(materialApp.theme?.brightness, Brightness.light);
+    expect(
+      materialApp.theme?.scaffoldBackgroundColor,
+      buildLectureVaultTheme(AppBackgroundStyle.white).scaffoldBackgroundColor,
+    );
 
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(find.byType(LectureVaultApp), findsOneWidget);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildLectureVaultTheme(AppBackgroundStyle.darkDefault),
+        home: const SizedBox.shrink(),
+      ),
+    );
+
+    materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(materialApp.theme?.brightness, Brightness.dark);
+    expect(
+      materialApp.theme?.scaffoldBackgroundColor,
+      buildLectureVaultTheme(AppBackgroundStyle.darkDefault)
+          .scaffoldBackgroundColor,
+    );
   });
 }

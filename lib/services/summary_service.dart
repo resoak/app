@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'android_local_llm_runtime_service.dart';
 import '../utils/embedding_extractive_ranker.dart';
 import '../utils/paragraph_summary.dart';
 import '../utils/text_rank.dart';
@@ -108,6 +109,140 @@ class MiniLmSummaryService implements SummaryService {
     }
 
     return _fallbackService.summarizeTranscript(transcript);
+  }
+}
+
+class AndroidLocalLlmSummaryService implements SummaryService {
+  AndroidLocalLlmSummaryService({
+    LocalLlmTranscriptSummaryRuntime? runtime,
+    SummaryService? fallbackService,
+  })  : _runtime = runtime ?? AndroidLocalLlmRuntimeService(),
+        _fallbackService = fallbackService ?? const MiniLmSummaryService();
+
+  final LocalLlmTranscriptSummaryRuntime _runtime;
+  final SummaryService _fallbackService;
+
+  /// Known prompt-leakage phrases that small models tend to echo back.
+  static final RegExp _promptLeakagePattern = RegExp(
+    r'(逐字稿|重點摘要|開頭|原句|以下|請閱讀|請根據|請產出|不要重述|改寫成|'
+    r'使用繁體中文|不要加標題|不要加前言|im_start|im_end|'
+    r'assistant|system|user|開始摘要|以上是|'
+    r'請問|是什麼|做成中文|不能貼近)',
+    caseSensitive: false,
+  );
+
+  /// Lines ending with a question mark are prompt echoes, not summaries.
+  static final RegExp _questionPattern = RegExp(r'[？?]\s*$');
+
+  @override
+  Future<String> summarizeTranscript(String transcript) async {
+    final normalizedTranscript = transcript.trim();
+    if (normalizedTranscript.isEmpty) {
+      return '';
+    }
+
+    try {
+      final attempt = await _runtime.summarizeTranscript(normalizedTranscript);
+      if (attempt.hasSummary) {
+        final formattedSummary = _formatRuntimeSummary(
+          attempt.summary!,
+          transcript: normalizedTranscript,
+        );
+        if (formattedSummary.isNotEmpty) {
+          return formattedSummary;
+        }
+        debugPrint(
+          'AndroidLocalLlmSummaryService produced no usable bullet lines, falling back.',
+        );
+      } else if (attempt.isUnavailable) {
+        debugPrint(
+          'AndroidLocalLlmSummaryService unavailable: ${attempt.message}',
+        );
+      }
+    } catch (error) {
+      debugPrint('AndroidLocalLlmSummaryService fallback: $error');
+    }
+
+    final fallbackSummary =
+        await _fallbackService.summarizeTranscript(transcript);
+    if (fallbackSummary.trim().isNotEmpty) {
+      return fallbackSummary;
+    }
+    return '';
+  }
+
+  /// Check if a line is too similar to the original transcript (verbatim copy).
+  static bool _isVerbatimCopy(String line, String transcript) {
+    if (line.length < 10) return false;
+    final normalizedLine = line.replaceAll(RegExp(r'\s+'), '');
+    final normalizedTranscript = transcript.replaceAll(RegExp(r'\s+'), '');
+    // If the line appears verbatim as a substring of the transcript
+    if (normalizedTranscript.contains(normalizedLine)) return true;
+    // For longer lines, check character-level overlap with a sliding window
+    if (normalizedLine.length > 40) {
+      final windowSize = normalizedLine.length;
+      final maxStart = normalizedTranscript.length - windowSize;
+      for (var i = 0; i <= maxStart; i++) {
+        final window = normalizedTranscript.substring(i, i + windowSize);
+        var matches = 0;
+        for (var j = 0; j < windowSize; j++) {
+          if (normalizedLine[j] == window[j]) {
+            matches++;
+          }
+        }
+        if (matches / windowSize > 0.8) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Returns true if the line should be kept as a valid summary bullet.
+  bool _isUsableSummaryLine(String line, String transcript) {
+    if (line.isEmpty) return false;
+    if (line.startsWith('摘要')) return false;
+    if (_promptLeakagePattern.hasMatch(line)) return false;
+    if (_questionPattern.hasMatch(line)) return false;
+    if (transcript.isNotEmpty && _isVerbatimCopy(line, transcript)) {
+      return false;
+    }
+    return true;
+  }
+
+  String _formatRuntimeSummary(String rawSummary, {String transcript = ''}) {
+    final cleanedSummary = rawSummary
+        .replaceAll('<|eot_id|>', '')
+        .replaceAll('<|im_end|>', '')
+        .replaceAll('<|im_start|>', '');
+
+    final normalizedLines = cleanedSummary
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map(
+          (line) => line.replaceFirst(
+            RegExp(r'^(?:[•*\-]|\d+[.)、])\s*'),
+            '',
+          ),
+        )
+        .where((line) => _isUsableSummaryLine(line, transcript))
+        .toList(growable: false);
+
+    final bulletLines = normalizeKeyPoints(normalizedLines).take(5).toList();
+    if (bulletLines.isNotEmpty) {
+      return formatSummaryBullets(bulletLines);
+    }
+
+    final sentenceLines =
+        normalizeKeyPoints(TextRank.splitSentences(rawSummary))
+            .where((line) => _isUsableSummaryLine(line, transcript))
+            .take(5)
+            .toList(growable: false);
+    if (sentenceLines.isNotEmpty) {
+      return formatSummaryBullets(sentenceLines);
+    }
+
+    return '';
   }
 }
 

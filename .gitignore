@@ -55,3 +55,7 @@ app.*.map.json
 
 # Local temp artifacts and downloaded archives
 /.tmp/
+
+# Large model binary files (too large for GitHub, download separately)
+assets/models/llm/*.gguf
+assets/models/whisper/*.bin

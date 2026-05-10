@@ -4,8 +4,13 @@ import 'package:characters/characters.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 enum AppBackgroundStyle {
-  black,
+  darkDefault,
   white,
+}
+
+enum AppSummaryMethod {
+  extractive,
+  androidLocalLlm,
 }
 
 extension AppBackgroundStyleX on AppBackgroundStyle {
@@ -13,32 +18,78 @@ extension AppBackgroundStyleX on AppBackgroundStyle {
 
   String get label {
     switch (this) {
-      case AppBackgroundStyle.black:
-        return 'Black';
+      case AppBackgroundStyle.darkDefault:
+        return '預設背景';
       case AppBackgroundStyle.white:
-        return 'White';
+        return '白色背景';
     }
   }
 
   String get description {
     switch (this) {
-      case AppBackgroundStyle.black:
-        return '純黑預設背景。';
+      case AppBackgroundStyle.darkDefault:
+        return '原本預設深色背景。';
       case AppBackgroundStyle.white:
-        return '純白預設背景。';
+        return '真正的純白背景。';
     }
   }
 
   static AppBackgroundStyle fromStorage(String? raw) {
-    if (raw == 'darkDefault' || raw == 'aurora' || raw == 'blueprint') {
-      return AppBackgroundStyle.black;
+    if (raw == 'black' ||
+        raw == 'darkDefault' ||
+        raw == 'aurora' ||
+        raw == 'blueprint') {
+      return AppBackgroundStyle.darkDefault;
     }
     for (final style in AppBackgroundStyle.values) {
       if (style.storageValue == raw) {
         return style;
       }
     }
-    return AppBackgroundStyle.black;
+    return AppBackgroundStyle.darkDefault;
+  }
+}
+
+extension AppSummaryMethodX on AppSummaryMethod {
+  String get storageValue => name;
+
+  String get label {
+    switch (this) {
+      case AppSummaryMethod.extractive:
+        return 'Extractive 摘要';
+      case AppSummaryMethod.androidLocalLlm:
+        return 'Android 本機 LLM';
+    }
+  }
+
+  String get badgeLabel {
+    switch (this) {
+      case AppSummaryMethod.extractive:
+        return 'FALLBACK';
+      case AppSummaryMethod.androidLocalLlm:
+        return 'CURRENT DEFAULT';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case AppSummaryMethod.extractive:
+        return '以 extractive 方式做本地摘要，保留作為 Android LLM 不可用時的 fallback。';
+      case AppSummaryMethod.androidLocalLlm:
+        return '直接使用 Android 本機 LLM 生成條列重點，是目前建議的摘要路徑。';
+    }
+  }
+
+  static AppSummaryMethod fromStorage(String? raw) {
+    if (raw == 'localLlm' || raw == 'androidLocal') {
+      return AppSummaryMethod.androidLocalLlm;
+    }
+    for (final method in AppSummaryMethod.values) {
+      if (method.storageValue == raw) {
+        return method;
+      }
+    }
+    return AppSettings.defaultSummaryMethod;
   }
 }
 
@@ -96,16 +147,22 @@ class AppSettings {
   const AppSettings({
     required this.profile,
     required this.preferredWhisperModel,
+    required this.summaryMethod,
     required this.lectureLabels,
     required this.timelineLabels,
     required this.backgroundStyle,
-    required this.backgroundImagePath,
   });
 
   static const WhisperModel defaultWhisperModel = WhisperModel.base;
+  static const AppSummaryMethod defaultSummaryMethod =
+      AppSummaryMethod.androidLocalLlm;
   static const List<WhisperModel> availableWhisperModels = [
     WhisperModel.base,
     WhisperModel.small,
+  ];
+  static const List<AppSummaryMethod> availableSummaryMethods = [
+    AppSummaryMethod.androidLocalLlm,
+    AppSummaryMethod.extractive,
   ];
 
   static WhisperModel resolveAvailableWhisperModel(WhisperModel model) {
@@ -131,19 +188,19 @@ class AppSettings {
 
   final AppProfileSettings profile;
   final WhisperModel preferredWhisperModel;
+  final AppSummaryMethod summaryMethod;
   final List<String> lectureLabels;
   final List<String> timelineLabels;
   final AppBackgroundStyle backgroundStyle;
-  final String backgroundImagePath;
 
   factory AppSettings.defaults() {
     return const AppSettings(
       profile: AppProfileSettings(),
       preferredWhisperModel: defaultWhisperModel,
+      summaryMethod: defaultSummaryMethod,
       lectureLabels: defaultLectureLabels,
       timelineLabels: defaultTimelineLabels,
-      backgroundStyle: AppBackgroundStyle.black,
-      backgroundImagePath: '',
+      backgroundStyle: AppBackgroundStyle.darkDefault,
     );
   }
 
@@ -158,6 +215,9 @@ class AppSettings {
       preferredWhisperModel: WhisperModelSettingsX.fromStorage(
         raw[AppSettingsKeys.preferredWhisperModel],
       ),
+      summaryMethod: AppSummaryMethodX.fromStorage(
+        raw[AppSettingsKeys.summaryMethod],
+      ),
       lectureLabels: _decodeLabelList(
         raw,
         AppSettingsKeys.lectureLabels,
@@ -171,23 +231,22 @@ class AppSettings {
       backgroundStyle: AppBackgroundStyleX.fromStorage(
         raw[AppSettingsKeys.backgroundStyle],
       ),
-      backgroundImagePath:
-          raw[AppSettingsKeys.backgroundImagePath]?.trim() ?? '',
     );
   }
 
   AppSettings copyWith({
     AppProfileSettings? profile,
     WhisperModel? preferredWhisperModel,
+    AppSummaryMethod? summaryMethod,
     List<String>? lectureLabels,
     List<String>? timelineLabels,
     AppBackgroundStyle? backgroundStyle,
-    String? backgroundImagePath,
   }) {
     return AppSettings(
       profile: profile ?? this.profile,
       preferredWhisperModel:
           preferredWhisperModel ?? this.preferredWhisperModel,
+      summaryMethod: summaryMethod ?? this.summaryMethod,
       lectureLabels: lectureLabels == null
           ? this.lectureLabels
           : _normalizeLabels(lectureLabels),
@@ -195,7 +254,6 @@ class AppSettings {
           ? this.timelineLabels
           : _normalizeLabels(timelineLabels),
       backgroundStyle: backgroundStyle ?? this.backgroundStyle,
-      backgroundImagePath: backgroundImagePath ?? this.backgroundImagePath,
     );
   }
 
@@ -205,10 +263,10 @@ class AppSettings {
       AppSettingsKeys.profileOrganization: profile.organization.trim(),
       AppSettingsKeys.profileNote: profile.note.trim(),
       AppSettingsKeys.preferredWhisperModel: preferredWhisperModel.storageValue,
+      AppSettingsKeys.summaryMethod: summaryMethod.storageValue,
       AppSettingsKeys.lectureLabels: jsonEncode(lectureLabels),
       AppSettingsKeys.timelineLabels: jsonEncode(timelineLabels),
       AppSettingsKeys.backgroundStyle: backgroundStyle.storageValue,
-      AppSettingsKeys.backgroundImagePath: backgroundImagePath.trim(),
     };
   }
 
@@ -259,8 +317,8 @@ abstract final class AppSettingsKeys {
   static const String profileOrganization = 'profile.organization';
   static const String profileNote = 'profile.note';
   static const String preferredWhisperModel = 'transcription.preferredModel';
+  static const String summaryMethod = 'summary.method';
   static const String lectureLabels = 'labels.lecture';
   static const String timelineLabels = 'labels.timeline';
   static const String backgroundStyle = 'background.style';
-  static const String backgroundImagePath = 'background.imagePath';
 }

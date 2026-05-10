@@ -234,12 +234,14 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildSummaryContent() {
+    final palette = context.lvPalette;
+
     final keyPoints = _summaryKeyPoints();
     if (keyPoints.isEmpty) {
       return Text(
         _summaryParagraph(),
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.88),
+          color: palette.textSecondary,
           fontSize: 14,
           height: 1.65,
         ),
@@ -307,18 +309,20 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     required String title,
     required String description,
   }) async {
+    final palette = context.lvPalette;
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: LectureVaultColors.bgCard,
+          backgroundColor: palette.surface,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: Text(title, style: lvHeading(18)),
+          title: Text(title, style: dialogContext.lvHeading(18)),
           content: Text(
             description,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.72),
+              color: palette.textSecondary,
               fontSize: 14,
               height: 1.5,
             ),
@@ -328,7 +332,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
               onPressed: () => Navigator.pop(dialogContext),
               child: Text(
                 '稍後',
-                style: lvMono(12, color: LectureVaultColors.textMuted),
+                style: dialogContext.lvMono(12, color: palette.textMuted),
               ),
             ),
             TextButton(
@@ -338,7 +342,10 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
               },
               child: Text(
                 '前往設定',
-                style: lvMono(12, color: LectureVaultColors.blueElectric),
+                style: dialogContext.lvMono(
+                  12,
+                  color: LectureVaultColors.blueElectric,
+                ),
               ),
             ),
           ],
@@ -380,10 +387,11 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     }
 
     final selected = Set<String>.from(currentValues.map((v) => v.trim()));
+    final palette = context.lvPalette;
 
     return showModalBottomSheet<List<String>>(
       context: context,
-      backgroundColor: LectureVaultColors.bgCard,
+      backgroundColor: palette.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -406,7 +414,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                         width: 44,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.12),
+                          color: palette.borderSubtle,
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
@@ -416,12 +424,13 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(title,
-                            style: lvHeading(20, weight: FontWeight.w700)),
+                            style:
+                                context.lvHeading(20, weight: FontWeight.w700)),
                         TextButton(
                           onPressed: () =>
                               Navigator.pop(sheetContext, selected.toList()),
                           child: Text('完成',
-                              style: lvMono(14,
+                              style: context.lvMono(14,
                                   color: LectureVaultColors.blueElectric,
                                   weight: FontWeight.w600)),
                         ),
@@ -431,7 +440,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                     Text(
                       description,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: palette.textSecondary,
                         fontSize: 13,
                         height: 1.45,
                       ),
@@ -457,11 +466,11 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                                   }
                                 });
                               },
-                              labelStyle: lvMono(
+                              labelStyle: context.lvMono(
                                 11,
                                 color: isSelected
                                     ? Colors.white
-                                    : LectureVaultColors.textMuted,
+                                    : palette.textMuted,
                                 weight: FontWeight.w600,
                               ),
                               selectedColor: LectureVaultColors.purple
@@ -470,7 +479,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                               side: BorderSide(
                                 color: isSelected
                                     ? LectureVaultColors.purpleBright
-                                    : Colors.white.withValues(alpha: 0.16),
+                                    : palette.borderSubtle,
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(24),
@@ -495,24 +504,22 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.03),
+                          color: palette.surfaceAlt,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.08),
-                          ),
+                          border: Border.all(color: palette.borderSubtle),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               Icons.layers_clear_rounded,
-                              color: Colors.white.withValues(alpha: 0.75),
+                              color: palette.textSecondary,
                               size: 18,
                             ),
                             const SizedBox(width: 10),
                             Text(
                               '清除所有選擇',
-                              style: lvMono(11,
-                                  color: Colors.white.withValues(alpha: 0.75)),
+                              style: context.lvMono(11,
+                                  color: palette.textSecondary),
                             ),
                           ],
                         ),
@@ -530,8 +537,10 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                       ),
                       label: Text(
                         '管理標籤清單',
-                        style:
-                            lvMono(12, color: LectureVaultColors.blueElectric),
+                        style: context.lvMono(
+                          12,
+                          color: LectureVaultColors.blueElectric,
+                        ),
                       ),
                     ),
                   ],
@@ -632,6 +641,8 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.lvPalette;
+
     final timeline = _buildTimelineEntries();
     final transcriptionState = _lecture.id == null
         ? null
@@ -657,11 +668,11 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
             SliverAppBar(
               floating: true,
               pinned: false,
-              backgroundColor: LectureVaultColors.bgDeep.withValues(alpha: 0.8),
+              backgroundColor: palette.backgroundBase.withValues(alpha: 0.8),
               leading: IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white,
+                  color: palette.textPrimary,
                   size: 20,
                 ),
                 onPressed: () => Navigator.pop(context),
@@ -673,12 +684,12 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                 delegate: SliverChildListDelegate([
                   Text(
                     _analysisTitle(_lecture.title),
-                    style: lvHeading(22, weight: FontWeight.w700),
+                    style: context.lvHeading(22, weight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Generated by Local Neural Engine v3.2',
-                    style: lvMono(11, color: LectureVaultColors.textMuted),
+                    style: context.lvMono(11, color: palette.textMuted),
                   ),
                   const SizedBox(height: 18),
                   _buildLectureLabelCard(lectureLabels),
@@ -695,9 +706,9 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                   const SizedBox(height: 28),
                   Text(
                     'SMART TIMELINE',
-                    style: lvMono(
+                    style: context.lvMono(
                       11,
-                      color: LectureVaultColors.textMuted,
+                      color: palette.textMuted,
                       weight: FontWeight.w600,
                     ),
                   ),
@@ -715,9 +726,9 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                   const SizedBox(height: 28),
                   Text(
                     'TRANSCRIPT',
-                    style: lvMono(
+                    style: context.lvMono(
                       11,
-                      color: LectureVaultColors.textMuted,
+                      color: palette.textMuted,
                       weight: FontWeight.w600,
                     ),
                   ),
@@ -733,15 +744,17 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildLectureLabelCard(List<String> lectureLabels) {
+    final palette = context.lvPalette;
+
     final currentTags = _lecture.tags;
     final hasManagedLabels = lectureLabels.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: LectureVaultColors.bgCard.withValues(alpha: 0.9),
+        color: palette.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: palette.borderSubtle),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -752,7 +765,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
               children: [
                 Text(
                   'LECTURE LABELS',
-                  style: lvMono(10, color: LectureVaultColors.textMuted),
+                  style: context.lvMono(10, color: palette.textMuted),
                 ),
                 const SizedBox(height: 10),
                 if (currentTags.isNotEmpty)
@@ -774,7 +787,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                         ),
                         child: Text(
                           '#$tag',
-                          style: lvMono(10,
+                          style: context.lvMono(10,
                               color: LectureVaultColors.blueElectric),
                         ),
                       );
@@ -783,7 +796,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                 else
                   Text(
                     '尚未分類',
-                    style: lvMono(12, color: LectureVaultColors.textMuted),
+                    style: context.lvMono(12, color: palette.textMuted),
                   ),
                 const SizedBox(height: 12),
                 Text(
@@ -791,7 +804,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                       ? '目前可選 ${lectureLabels.length} 個標籤，可多選。'
                       : '設定頁目前沒有可用的課程標籤。',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.66),
+                    color: palette.textSecondary,
                     fontSize: 12,
                     height: 1.45,
                   ),
@@ -809,7 +822,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
             ),
             label: Text(
               '編輯',
-              style: lvMono(12, color: LectureVaultColors.purpleBright),
+              style: context.lvMono(12, color: LectureVaultColors.purpleBright),
             ),
           ),
         ],
@@ -863,8 +876,10 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(_formatHms(_position.inSeconds), style: lvMono(10)),
-                      Text(_formatHms(_duration.inSeconds), style: lvMono(10)),
+                      Text(_formatHms(_position.inSeconds),
+                          style: context.lvMono(10)),
+                      Text(_formatHms(_duration.inSeconds),
+                          style: context.lvMono(10)),
                     ],
                   ),
                 ),
@@ -877,12 +892,14 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildShareCard() {
+    final palette = context.lvPalette;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: LectureVaultColors.bgCard.withValues(alpha: 0.92),
+        color: palette.surface.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: palette.borderSubtle),
         boxShadow: [
           BoxShadow(
             color: LectureVaultColors.blueElectric.withValues(alpha: 0.1),
@@ -895,15 +912,18 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
         children: [
           Text(
             'EXPORT & SHARE',
-            style: lvMono(10, color: LectureVaultColors.textMuted),
+            style: context.lvMono(10, color: palette.textMuted),
           ),
           const SizedBox(height: 8),
-          Text('把這堂課帶去其他 App', style: lvHeading(18, weight: FontWeight.w700)),
+          Text(
+            '把這堂課帶去其他 App',
+            style: context.lvHeading(18, weight: FontWeight.w700),
+          ),
           const SizedBox(height: 8),
           Text(
             '可直接分享原始音檔與一份整理好的摘要 / 逐字稿文字檔，也能只匯出文字筆記。',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.68),
+              color: palette.textSecondary,
               fontSize: 13,
               height: 1.45,
             ),
@@ -940,6 +960,8 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildGlassSummary() {
+    final palette = context.lvPalette;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
@@ -947,9 +969,9 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
         child: Container(
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            color: const Color(0xFF2D1B4E).withValues(alpha: 0.35),
+            color: palette.summaryGlass.withValues(alpha: 0.35),
             borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            border: Border.all(color: palette.borderSubtle),
             boxShadow: [
               BoxShadow(
                 color: LectureVaultColors.purple.withValues(alpha: 0.15),
@@ -962,11 +984,11 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
             children: [
               Row(
                 children: [
-                  Text('✨', style: lvHeading(16)),
+                  Text('✨', style: context.lvHeading(16)),
                   const SizedBox(width: 8),
                   Text(
                     'AI 核心摘要',
-                    style: lvHeading(16, weight: FontWeight.w700),
+                    style: context.lvHeading(16, weight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -980,6 +1002,8 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildTranscriptionProgress(TranscriptionState transcriptionState) {
+    final palette = context.lvPalette;
+
     final isError = transcriptionState.status == TranscriptionStatus.error;
     final progress = transcriptionState.progress.clamp(0.0, 1.0);
 
@@ -1003,7 +1027,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
             isError
                 ? '背景轉錄失敗，請稍後再試。'
                 : 'AI 正在背景轉錄 ${(progress * 100).round()}%',
-            style: lvMono(
+            style: context.lvMono(
               12,
               color: isError
                   ? LectureVaultColors.stopRed
@@ -1018,7 +1042,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 10,
-                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                backgroundColor: palette.borderSubtle,
                 valueColor: const AlwaysStoppedAnimation<Color>(
                   LectureVaultColors.blueElectric,
                 ),
@@ -1027,7 +1051,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
             const SizedBox(height: 8),
             Text(
               '完成後會自動更新摘要、逐字稿與時間軸。',
-              style: lvMono(11, color: LectureVaultColors.textMuted),
+              style: context.lvMono(11, color: palette.textMuted),
             ),
           ],
         ],
@@ -1039,18 +1063,20 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
     List<LectureTimelineEntry> items,
     List<String> timelineLabels,
   ) {
+    final palette = context.lvPalette;
+
     if (items.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: LectureVaultColors.bgCard.withValues(alpha: 0.82),
+          color: palette.surface.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: palette.borderSubtle),
         ),
         child: Text(
           _lecture.transcript.trim().isEmpty ? '尚無可用時間軸，請先完成語音轉錄。' : '尚無時間軸資料。',
-          style: lvMono(12, color: LectureVaultColors.textMuted),
+          style: context.lvMono(12, color: palette.textMuted),
         ),
       );
     }
@@ -1121,7 +1147,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                         children: [
                           Text(
                             _formatHms((item.startMs / 1000).floor()),
-                            style: lvMono(
+                            style: context.lvMono(
                               12,
                               color: dotColor,
                               weight: FontWeight.w600,
@@ -1141,7 +1167,7 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                                 ),
                                 child: Text(
                                   l,
-                                  style: lvMono(10,
+                                  style: context.lvMono(10,
                                       color: dotColor, weight: FontWeight.w600),
                                 ),
                               )),
@@ -1151,17 +1177,14 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                             avatar: Icon(
                               Icons.sell_outlined,
                               size: 15,
-                              color: Colors.white.withValues(alpha: 0.72),
+                              color: palette.textSecondary,
                             ),
                             label: Text(
                                 currentEntryLabels.isEmpty ? '套用標籤' : '編輯標籤'),
-                            labelStyle: lvMono(10,
-                                color: Colors.white.withValues(alpha: 0.72)),
-                            backgroundColor:
-                                Colors.white.withValues(alpha: 0.05),
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.1),
-                            ),
+                            labelStyle: context.lvMono(10,
+                                color: palette.textSecondary),
+                            backgroundColor: palette.surfaceAlt,
+                            side: BorderSide(color: palette.borderSubtle),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(999),
                             ),
@@ -1172,15 +1195,14 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
                         const SizedBox(height: 6),
                         Text(
                           '估算時間點',
-                          style:
-                              lvMono(10, color: LectureVaultColors.textMuted),
+                          style: context.lvMono(10, color: palette.textMuted),
                         ),
                       ],
                       const SizedBox(height: 8),
                       Text(
                         item.text,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.82),
+                          color: palette.textPrimary,
                           fontSize: 14,
                           height: 1.45,
                         ),
@@ -1197,18 +1219,20 @@ class _LectureDetailScreenState extends ConsumerState<LectureDetailScreen> {
   }
 
   Widget _buildTranscriptBox() {
+    final palette = context.lvPalette;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: LectureVaultColors.bgCard.withValues(alpha: 0.85),
+        color: palette.surface.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        border: Border.all(color: palette.borderSubtle),
       ),
       child: Text(
         _lecture.transcript.isEmpty ? '尚無轉錄內容' : _lecture.transcript,
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.72),
+          color: palette.textSecondary,
           fontSize: 14,
           height: 1.6,
         ),
@@ -1262,7 +1286,7 @@ class _SummaryKeyPointCard extends StatelessWidget {
             ),
             child: Text(
               '${index + 1}'.padLeft(2, '0'),
-              style: lvMono(
+              style: context.lvMono(
                 9,
                 color: accentColor,
                 weight: FontWeight.w700,
@@ -1322,8 +1346,11 @@ class _ShareActionButton extends StatelessWidget {
                 child: Text(
                   label,
                   textAlign: TextAlign.center,
-                  style:
-                      lvMono(11, color: accentColor, weight: FontWeight.w600),
+                  style: context.lvMono(
+                    11,
+                    color: accentColor,
+                    weight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],

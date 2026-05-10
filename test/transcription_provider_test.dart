@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lecture_vault/models/app_settings.dart';
 import 'package:lecture_vault/models/lecture.dart';
+import 'package:lecture_vault/providers/app_settings_provider.dart';
 import 'package:lecture_vault/providers/transcription_provider.dart';
+import 'package:lecture_vault/services/summary_service.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 class _FakeWakelockPlatform extends WakelockPlusPlatformInterface {
@@ -141,5 +144,80 @@ void main() {
         0.0,
       );
     });
+
+    test('selectedSummaryServiceProvider defaults to extractive flow',
+        () async {
+      const extractive = _NamedSummaryService('extractive');
+      const androidLocalLlm = _NamedSummaryService('android');
+
+      final container = ProviderContainer(
+        overrides: [
+          appSettingsProvider.overrideWith(
+            () => _StaticAppSettingsNotifier(AppSettings.defaults()),
+          ),
+          extractiveSummaryServiceProvider.overrideWithValue(extractive),
+          androidLocalLlmSummaryServiceProvider.overrideWithValue(
+            androidLocalLlm,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(appSettingsProvider.future);
+
+      final summary = await container
+          .read(selectedSummaryServiceProvider)
+          .summarizeTranscript('demo');
+      expect(summary, 'extractive');
+    });
+
+    test(
+        'selectedSummaryServiceProvider switches to Android local LLM when requested',
+        () async {
+      const extractive = _NamedSummaryService('extractive');
+      const androidLocalLlm = _NamedSummaryService('android');
+
+      final container = ProviderContainer(
+        overrides: [
+          appSettingsProvider.overrideWith(
+            () => _StaticAppSettingsNotifier(
+              AppSettings.defaults().copyWith(
+                summaryMethod: AppSummaryMethod.androidLocalLlm,
+              ),
+            ),
+          ),
+          extractiveSummaryServiceProvider.overrideWithValue(extractive),
+          androidLocalLlmSummaryServiceProvider.overrideWithValue(
+            androidLocalLlm,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(appSettingsProvider.future);
+
+      final summary = await container
+          .read(selectedSummaryServiceProvider)
+          .summarizeTranscript('demo');
+      expect(summary, 'android');
+    });
   });
+}
+
+class _NamedSummaryService implements SummaryService {
+  const _NamedSummaryService(this.name);
+
+  final String name;
+
+  @override
+  Future<String> summarizeTranscript(String transcript) async => name;
+}
+
+class _StaticAppSettingsNotifier extends AppSettingsNotifier {
+  _StaticAppSettingsNotifier(this._settings);
+
+  final AppSettings _settings;
+
+  @override
+  Future<AppSettings> build() async => _settings;
 }

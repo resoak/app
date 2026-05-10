@@ -57,6 +57,11 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     await _persist(nextSettings);
   }
 
+  Future<void> updateSummaryMethod(AppSummaryMethod method) async {
+    final nextSettings = _currentSettings.copyWith(summaryMethod: method);
+    await _persist(nextSettings);
+  }
+
   Future<void> addLectureLabel(String label) async {
     final nextSettings = _currentSettings.copyWith(
       lectureLabels: [..._currentSettings.lectureLabels, label],
@@ -110,18 +115,6 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     await _persist(nextSettings);
   }
 
-  Future<void> updateBackgroundImagePath(String managedRelativePath) async {
-    final nextSettings = _currentSettings.copyWith(
-      backgroundImagePath: managedRelativePath.trim(),
-    );
-    await _persist(nextSettings);
-  }
-
-  Future<void> clearBackgroundImagePath() async {
-    final nextSettings = _currentSettings.copyWith(backgroundImagePath: '');
-    await _persist(nextSettings);
-  }
-
   Future<void> resetToDefaults() async {
     await _persist(AppSettings.defaults());
   }
@@ -137,10 +130,10 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
         AppSettingsKeys.profileOrganization,
         AppSettingsKeys.profileNote,
         AppSettingsKeys.preferredWhisperModel,
+        AppSettingsKeys.summaryMethod,
         AppSettingsKeys.lectureLabels,
         AppSettingsKeys.timelineLabels,
         AppSettingsKeys.backgroundStyle,
-        AppSettingsKeys.backgroundImagePath,
       ];
 
       for (final key in keysToSync) {

@@ -110,17 +110,23 @@ class SttService {
   }
 
   Future<void> _ensureModelReady() async {
+    debugPrint('STT: Ensuring model present for: $_activeWhisperModel');
     await _ensureBundledModelPresent(_activeWhisperModel);
+    debugPrint('STT: Model present, initializing...');
     await _whisperController.initModel(_activeWhisperModel);
+    debugPrint('STT: Model initialized successfully');
   }
 
   Future<void> initialize() async {
     if (_isInitialized) return;
+    debugPrint('STT: Initializing with model: $_activeWhisperModel');
     _activeWhisperModel = resolveWhisperModel(
       preferredModel: _preferredWhisperModel,
       languageCode: ui.PlatformDispatcher.instance.locale.languageCode,
     );
+    debugPrint('STT: Resolved model: $_activeWhisperModel');
     await _ensureModelReady();
+    debugPrint('STT: Model ready, isInitialized: true');
     _isInitialized = true;
   }
 

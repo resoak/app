@@ -7,6 +7,7 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
 
 import '../models/drive_backup_state.dart';
+import 'google_sign_in_configuration.dart';
 
 class DriveBackupException implements Exception {
   const DriveBackupException(this.userMessage, {this.cause});
@@ -30,8 +31,8 @@ abstract interface class GoogleDriveAuthClient {
 
 class GoogleDriveAuthService implements GoogleDriveAuthClient {
   GoogleDriveAuthService({GoogleSignIn? googleSignIn})
-      : _googleSignIn =
-            googleSignIn ?? GoogleSignIn(scopes: [drive.DriveApi.driveAppdataScope]);
+      : _googleSignIn = googleSignIn ??
+            buildGoogleSignIn(scopes: const [drive.DriveApi.driveAppdataScope]);
 
   final GoogleSignIn _googleSignIn;
 
@@ -39,7 +40,9 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
   Future<GoogleDriveAccount> inspectAccount({bool trySilent = true}) async {
     try {
       final currentUser = _googleSignIn.currentUser ??
-          (trySilent ? await _googleSignIn.signInSilently() : null);
+          (trySilent
+              ? await _googleSignIn.signInSilently(suppressErrors: true)
+              : null);
       return _toAccount(currentUser);
     } catch (error) {
       throw _mapException(error);
@@ -72,16 +75,18 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
   }
 
   @override
-  Future<http.Client> getAuthenticatedClient({bool promptIfNeeded = false}) async {
+  Future<http.Client> getAuthenticatedClient(
+      {bool promptIfNeeded = false}) async {
     try {
       GoogleSignInAccount? currentUser = _googleSignIn.currentUser;
-      
+
       // 如果目前沒有登入且需要提示，則嘗試登入
       if (currentUser == null) {
         if (promptIfNeeded) {
           currentUser = await _googleSignIn.signIn();
         } else {
-          currentUser = await _googleSignIn.signInSilently();
+          currentUser =
+              await _googleSignIn.signInSilently(suppressErrors: true);
         }
       }
 
@@ -123,33 +128,13 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
   }
 
   DriveBackupException _mapException(Object error) {
-    final message = error.toString();
-    final normalized = message.toLowerCase();
+    final message = mapGoogleSignInError(error);
 
-    // 針對台灣常見網路錯誤與 Google API 錯誤進行優化
-    if (normalized.contains('network') || normalized.contains('connection')) {
-      return DriveBackupException('網路連線異常，請檢查 Wi-Fi 或行動數據後再試。', cause: error);
+    if (message == error.toString()) {
+      return DriveBackupException('Google Drive 服務暫時無法使用 ($error)',
+          cause: error);
     }
 
-    if (normalized.contains('canceled') || normalized.contains('cancelled')) {
-      return DriveBackupException('操作已取消。', cause: error);
-    }
-
-    if (normalized.contains('user-recoverable')) {
-      return DriveBackupException('Google 帳號需要重新驗證，請登出後再重新登入。', cause: error);
-    }
-
-    if (normalized.contains('apiexception: 10') ||
-        normalized.contains('developer_error')) {
-      return DriveBackupException(
-        'Google 服務設定錯誤（可能是 SHA-1 指紋不符），請聯絡開發人員。',
-        cause: error,
-      );
-    }
-
-    return DriveBackupException(
-      'Google Drive 服務暫時無法使用 ($error)',
-      cause: error,
-    );
+    return DriveBackupException(message, cause: error);
   }
 }

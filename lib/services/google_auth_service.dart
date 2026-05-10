@@ -3,10 +3,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 
-const String _googleClientId =
-    String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '');
-const String _googleServerClientId =
-    String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID', defaultValue: '');
+import 'google_sign_in_configuration.dart';
 
 class GoogleAuthException implements Exception {
   const GoogleAuthException(this.message);
@@ -20,15 +17,7 @@ class GoogleAuthException implements Exception {
 class GoogleAuthService {
   GoogleAuthService({GoogleSignIn? googleSignIn})
       : _googleSignIn = googleSignIn ??
-            GoogleSignIn(
-              scopes: const [drive.DriveApi.driveAppdataScope],
-              clientId: _googleClientId.trim().isEmpty
-                  ? null
-                  : _googleClientId.trim(),
-              serverClientId: _googleServerClientId.trim().isEmpty
-                  ? null
-                  : _googleServerClientId.trim(),
-            );
+            buildGoogleSignIn(scopes: const [drive.DriveApi.driveAppdataScope]);
 
   final GoogleSignIn _googleSignIn;
 
@@ -114,22 +103,6 @@ class GoogleAuthService {
   }
 
   String _mapPlatformError(PlatformException error) {
-    final combined = '${error.code} ${error.message ?? ''}'.toLowerCase();
-    if (combined.contains('clientconfiguration') ||
-        combined.contains('serverclientid') ||
-        combined.contains('client id') ||
-        combined.contains('reversed client id') ||
-        combined.contains('configuration')) {
-      return 'Google 登入尚未完成設定。請補上 Google OAuth client 設定後再試。';
-    }
-    if (error.code == GoogleSignIn.kSignInCanceledError) {
-      return '已取消 Google 登入。';
-    }
-    if (combined.contains('network')) {
-      return 'Google 登入失敗：網路連線異常。';
-    }
-    return error.message?.trim().isNotEmpty == true
-        ? error.message!.trim()
-        : 'Google 登入失敗，請稍後再試。';
+    return mapGoogleSignInError(error);
   }
 }
