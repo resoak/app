@@ -52,12 +52,16 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
   @override
   Future<GoogleDriveAccount> signIn() async {
     try {
+      debugPrint('GoogleDriveAuthService.signIn: start');
       final user = await _googleSignIn.signIn();
+      debugPrint('GoogleDriveAuthService.signIn: signIn returned ${user?.email ?? 'null'}');
       if (user == null) {
         throw const DriveBackupException('已取消 Google 登入。');
       }
+      debugPrint('GoogleDriveAuthService.signIn: success');
       return _toAccount(user);
     } catch (error) {
+      debugPrint('GoogleDriveAuthService.signIn: error $error');
       if (error is DriveBackupException) {
         rethrow;
       }
@@ -78,15 +82,21 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
   Future<http.Client> getAuthenticatedClient(
       {bool promptIfNeeded = false}) async {
     try {
+      debugPrint('GoogleDriveAuthService.getAuthenticatedClient: start promptIfNeeded=$promptIfNeeded');
       GoogleSignInAccount? currentUser = _googleSignIn.currentUser;
+      debugPrint('GoogleDriveAuthService.getAuthenticatedClient: currentUser=${currentUser?.email ?? 'null'}');
 
       // 如果目前沒有登入且需要提示，則嘗試登入
       if (currentUser == null) {
         if (promptIfNeeded) {
+          debugPrint('GoogleDriveAuthService.getAuthenticatedClient: calling signIn');
           currentUser = await _googleSignIn.signIn();
+          debugPrint('GoogleDriveAuthService.getAuthenticatedClient: signIn returned ${currentUser?.email ?? 'null'}');
         } else {
+          debugPrint('GoogleDriveAuthService.getAuthenticatedClient: calling signInSilently');
           currentUser =
               await _googleSignIn.signInSilently(suppressErrors: true);
+          debugPrint('GoogleDriveAuthService.getAuthenticatedClient: signInSilently returned ${currentUser?.email ?? 'null'}');
         }
       }
 
@@ -96,18 +106,24 @@ class GoogleDriveAuthService implements GoogleDriveAuthClient {
 
       // 韌性優化：主動清除快取以強迫刷新 Token，防止在備份中途過期
       try {
+        debugPrint('GoogleDriveAuthService.getAuthenticatedClient: clearing auth cache');
         await currentUser.clearAuthCache();
+        debugPrint('GoogleDriveAuthService.getAuthenticatedClient: auth cache cleared');
       } catch (e) {
         // 清除失敗通常不代表致命錯誤，記錄即可
         debugPrint('GoogleDriveAuth: 無法清除 Token 快取: $e');
       }
 
+      debugPrint('GoogleDriveAuthService.getAuthenticatedClient: requesting authenticated client');
       final client = await _googleSignIn.authenticatedClient();
+      debugPrint('GoogleDriveAuthService.getAuthenticatedClient: authenticated client ${client == null ? 'null' : 'ready'}');
       if (client == null) {
         throw const DriveBackupException('無法取得 Google 授權，請嘗試重新登入。');
       }
+      debugPrint('GoogleDriveAuthService.getAuthenticatedClient: success');
       return client;
     } catch (error) {
+      debugPrint('GoogleDriveAuthService.getAuthenticatedClient: error $error');
       if (error is DriveBackupException) {
         rethrow;
       }

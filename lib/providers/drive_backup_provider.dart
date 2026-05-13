@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/drive_backup_metadata.dart';
@@ -172,10 +173,11 @@ class DriveBackupController extends AsyncNotifier<DriveBackupState> {
   }
 
   Future<void> _runBusy(
-    String _,
+    String label,
     Future<void> Function() action,
   ) async {
     final previous = _current;
+    debugPrint('DriveBackupController: $label -> busy start');
     state = AsyncData(
       previous.copyWith(
         isBusy: true,
@@ -183,8 +185,11 @@ class DriveBackupController extends AsyncNotifier<DriveBackupState> {
       ),
     );
     try {
+      debugPrint('DriveBackupController: $label -> action begin');
       await action();
+      debugPrint('DriveBackupController: $label -> action success');
     } catch (error, stackTrace) {
+      debugPrint('DriveBackupController: $label -> action error: $error');
       state = AsyncData(
         previous.copyWith(
           isBusy: false,
@@ -193,6 +198,7 @@ class DriveBackupController extends AsyncNotifier<DriveBackupState> {
       );
       Error.throwWithStackTrace(error, stackTrace);
     } finally {
+      debugPrint('DriveBackupController: $label -> busy clear');
       state = AsyncData(_current.copyWith(isBusy: false));
     }
   }

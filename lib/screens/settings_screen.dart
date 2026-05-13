@@ -484,6 +484,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   style: context.lvMono(11, color: LectureVaultColors.stopRed),
                 ),
               ],
+              if (state.isBusy) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: palette.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: palette.borderSubtle),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Google Drive 處理中，請稍候…',
+                        style: context.lvMono(11, color: palette.textMuted),
+                      ),
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(
+                        minHeight: 3,
+                        backgroundColor: LectureVaultColors.stopRed,
+                        valueColor: AlwaysStoppedAnimation(
+                          LectureVaultColors.purpleBright,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               Wrap(
                 spacing: 10,

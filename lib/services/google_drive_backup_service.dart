@@ -35,19 +35,27 @@ class GoogleDriveBackupService implements DriveBackupGateway {
   Future<DriveBackupMetadata?> fetchLatestBackupMetadata(
       {bool promptIfNeeded = false}) async {
     return _runWithRetry(() async {
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: start promptIfNeeded=$promptIfNeeded');
       final client = await _authClient.getAuthenticatedClient(
           promptIfNeeded: promptIfNeeded);
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: authenticated client ready');
       final api = drive.DriveApi(client);
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: listing metadata file');
       final metadataFile = await _findBackupFile(
           api, DriveBackupMetadata.metadataFileNameDefault);
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: metadata file ${metadataFile?.id ?? 'null'}');
       if (metadataFile == null) {
         return null;
       }
 
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: downloading metadata');
       final rawContent = await _downloadText(api, metadataFile.id!);
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: decoding metadata');
       final metadata = DriveBackupMetadata.decode(rawContent);
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: listing archive file');
       final archiveFile = await _findBackupFile(
           api, DriveBackupMetadata.archiveFileNameDefault);
+      debugPrint('GoogleDriveBackupService.fetchLatestBackupMetadata: done');
       return metadata.copyWith(
         archiveFileId: archiveFile?.id ?? metadata.archiveFileId,
         archiveFileName: archiveFile?.name ?? metadata.archiveFileName,
@@ -57,13 +65,19 @@ class GoogleDriveBackupService implements DriveBackupGateway {
 
   @override
   Future<DriveBackupMetadata> uploadLatestBackup() async {
+    debugPrint('GoogleDriveBackupService.uploadLatestBackup: start');
+    debugPrint('GoogleDriveBackupService.uploadLatestBackup: creating archive');
     final bundle = await _archiveService.createBackupArchive();
+    debugPrint('GoogleDriveBackupService.uploadLatestBackup: archive ready');
 
     return _runWithRetry(() async {
+      debugPrint('GoogleDriveBackupService.uploadLatestBackup: requesting authenticated client');
       final client =
           await _authClient.getAuthenticatedClient(promptIfNeeded: true);
+      debugPrint('GoogleDriveBackupService.uploadLatestBackup: authenticated client ready');
       final api = drive.DriveApi(client);
 
+      debugPrint('GoogleDriveBackupService.uploadLatestBackup: uploading archive file');
       final archiveFile = await _createOrUpdateFile(
         api: api,
         name: DriveBackupMetadata.archiveFileNameDefault,
@@ -77,6 +91,7 @@ class GoogleDriveBackupService implements DriveBackupGateway {
             archiveFile.name ?? DriveBackupMetadata.archiveFileNameDefault,
       );
 
+      debugPrint('GoogleDriveBackupService.uploadLatestBackup: uploading metadata file');
       await _createOrUpdateFile(
         api: api,
         name: DriveBackupMetadata.metadataFileNameDefault,
@@ -84,18 +99,24 @@ class GoogleDriveBackupService implements DriveBackupGateway {
         bytes: Uint8List.fromList(utf8.encode(metadata.encode())),
       );
 
+      debugPrint('GoogleDriveBackupService.uploadLatestBackup: done');
       return metadata;
     });
   }
 
   @override
   Future<DriveBackupMetadata> restoreLatestBackup() async {
+    debugPrint('GoogleDriveBackupService.restoreLatestBackup: start');
     return _runWithRetry(() async {
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: requesting authenticated client');
       final client =
           await _authClient.getAuthenticatedClient(promptIfNeeded: true);
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: authenticated client ready');
       final api = drive.DriveApi(client);
 
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: fetching metadata');
       final metadata = await fetchLatestBackupMetadata(promptIfNeeded: true);
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: metadata ${metadata?.archiveFileId ?? 'null'}');
       final archiveFile = metadata?.archiveFileId == null
           ? await _findBackupFile(
               api, DriveBackupMetadata.archiveFileNameDefault)
@@ -108,11 +129,16 @@ class GoogleDriveBackupService implements DriveBackupGateway {
         throw const DriveBackupException('Google Drive 上找不到可還原的備份檔。');
       }
 
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: downloading archive bytes');
       final archiveBytes = await _downloadBytes(api, archiveFile.id!);
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: closing db');
       await _dbService.close();
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: restoring archive');
       final restoredMetadata =
           await _archiveService.restoreBackupArchive(archiveBytes);
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: notifying mutation');
       _dbService.notifyExternalDataMutation();
+      debugPrint('GoogleDriveBackupService.restoreLatestBackup: done');
       return restoredMetadata.copyWith(
         archiveFileId: archiveFile.id,
         archiveFileName:
@@ -167,7 +193,9 @@ class GoogleDriveBackupService implements DriveBackupGateway {
     required String mimeType,
     required Uint8List bytes,
   }) async {
+    debugPrint('GoogleDriveBackupService._createOrUpdateFile: start name=$name');
     final existing = await _findBackupFile(api, name);
+    debugPrint('GoogleDriveBackupService._createOrUpdateFile: existing=${existing?.id ?? 'null'}');
     
     // 建立基礎的 metadata，不要在此處設定 parents
     final fileMetadata = drive.File()
@@ -184,6 +212,7 @@ class GoogleDriveBackupService implements DriveBackupGateway {
 
     if (existing?.id != null) {
       // 更新現有檔案：Google Drive API v3 不允許在 update 請求的 metadata 中包含 parents
+      debugPrint('GoogleDriveBackupService._createOrUpdateFile: updating existing file');
       return await api.files.update(
         fileMetadata,
         existing!.id!,
@@ -194,6 +223,7 @@ class GoogleDriveBackupService implements DriveBackupGateway {
 
     // 建立新檔案：必須指定 parents 為 appDataFolder
     fileMetadata.parents = const ['appDataFolder'];
+    debugPrint('GoogleDriveBackupService._createOrUpdateFile: creating new file');
     return await api.files.create(
       fileMetadata,
       uploadMedia: media,
@@ -202,6 +232,7 @@ class GoogleDriveBackupService implements DriveBackupGateway {
   }
 
   Future<drive.File?> _findBackupFile(drive.DriveApi api, String name) async {
+    debugPrint('GoogleDriveBackupService._findBackupFile: start name=$name');
     final escapedName = name.replaceAll("'", r"\'");
     final response = await api.files.list(
       spaces: 'appDataFolder',
@@ -212,6 +243,7 @@ class GoogleDriveBackupService implements DriveBackupGateway {
 
     final files = response.files;
     if (files == null || files.isEmpty) {
+      debugPrint('GoogleDriveBackupService._findBackupFile: none found');
       return null;
     }
 
@@ -222,15 +254,19 @@ class GoogleDriveBackupService implements DriveBackupGateway {
           right.modifiedTime ?? DateTime.fromMillisecondsSinceEpoch(0);
       return rightTime.compareTo(leftTime);
     });
+    debugPrint('GoogleDriveBackupService._findBackupFile: found ${files.first.id}');
     return files.first;
   }
 
   Future<String> _downloadText(drive.DriveApi api, String fileId) async {
+    debugPrint('GoogleDriveBackupService._downloadText: start fileId=$fileId');
     final bytes = await _downloadBytes(api, fileId);
+    debugPrint('GoogleDriveBackupService._downloadText: done');
     return utf8.decode(bytes);
   }
 
   Future<Uint8List> _downloadBytes(drive.DriveApi api, String fileId) async {
+    debugPrint('GoogleDriveBackupService._downloadBytes: start fileId=$fileId');
     final response = await api.files.get(
       fileId,
       downloadOptions: drive.DownloadOptions.fullMedia,
@@ -244,6 +280,7 @@ class GoogleDriveBackupService implements DriveBackupGateway {
     await for (final chunk in response.stream) {
       chunks.addAll(chunk);
     }
+    debugPrint('GoogleDriveBackupService._downloadBytes: done fileId=$fileId bytes=${chunks.length}');
     return Uint8List.fromList(chunks);
   }
 }
