@@ -1,3 +1,16 @@
 {
-    "cmake.sourceDirectory": "C:/Users/RS/Desktop/app/lecture_vault/lecture_vault/linux"
+    "cmake.sourceDirectory": "C:/Users/RS/Desktop/app/lecture_vault/lecture_vault/linux",
+    "java.import.exclusions": [
+        "**/third_party/onnxruntime/android",
+        "**/third_party/onnxruntime/example/android"
+    ],
+    "files.watcherExclude": {
+        "**/third_party/onnxruntime/android/**": true,
+        "**/third_party/onnxruntime/example/android/**": true
+    },
+    "search.exclude": {
+        "**/third_party/onnxruntime/android/**": true,
+        "**/third_party/onnxruntime/example/android/**": true
+    },
+    "gradle.nestedProjects": false
 }
