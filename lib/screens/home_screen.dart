@@ -306,8 +306,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
 
-    if (newTitle == null || newTitle.isEmpty || newTitle == lecture.title)
+    if (newTitle == null || newTitle.isEmpty || newTitle == lecture.title) {
       return;
+    }
 
     await _dbService.updateLecture(lecture.copyWith(title: newTitle));
   }
@@ -1021,7 +1022,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: LinearProgressIndicator(
-                      value: transcriptionState!.progress.clamp(0.0, 1.0),
+                      value: transcriptionState.progress.clamp(0.0, 1.0),
                       minHeight: 8,
                       backgroundColor: palette.borderSubtle,
                       valueColor: const AlwaysStoppedAnimation<Color>(

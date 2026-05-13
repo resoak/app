@@ -87,6 +87,7 @@ String _googleConfigurationMessage() {
 String _googleDeveloperErrorMessage() {
   return 'Google 登入設定錯誤（developer_error / SHA-1）。請在 Google Cloud 或 Firebase '
       '為 Android OAuth client 註冊 package name：$androidGoogleSignInPackageName，'
-      '並加入你目前安裝到手機上的簽章 SHA-1；若要授權 Google Drive，還需要提供 Web OAuth client ID '
+      '並加入你目前安裝到手機上的簽章 SHA-1；若使用 Firebase，請確認 android/app/google-services.json '
+      '與目前 package name / SHA-1 相符。若要授權 Google Drive，還需要提供 Web OAuth client ID '
       '（--dart-define=GOOGLE_SERVER_CLIENT_ID=... 或標準 Firebase 產生的 default_web_client_id）。';
 }
