@@ -40,9 +40,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    # Whisper 模型 - base 和 small 都需要
-    - assets/models/whisper/ggml-small.bin
-    - assets/models/whisper/ggml-base.bin
+    # Whisper 模型目錄；大型 .bin 檔案可放在此目錄供本機開發/發版打包。
+    - assets/models/whisper/
     - assets/models/minilm/
     - assets/models/llm/
 
