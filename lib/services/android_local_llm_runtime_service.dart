@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:fcllama/fllama.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'model_download_service.dart';
 
@@ -48,20 +46,16 @@ abstract class LocalLlmTranscriptSummaryRuntime {
   Future<LocalLlmSummaryAttempt> summarizeTranscript(String transcript);
 }
 
-typedef AppSupportDirectoryResolver = Future<Directory> Function();
 typedef AndroidPlatformChecker = bool Function();
 typedef FCllamaProvider = FCllama? Function();
 
 class AndroidLocalLlmRuntimeService
     implements LocalLlmTranscriptSummaryRuntime {
   AndroidLocalLlmRuntimeService({
-    AppSupportDirectoryResolver? appSupportDirectoryResolver,
     AndroidPlatformChecker? isAndroid,
     FCllamaProvider? llamaProvider,
     String? modelFilePath,
-  })  : _appSupportDirectoryResolver =
-            appSupportDirectoryResolver ?? getApplicationSupportDirectory,
-        _isAndroid = isAndroid ?? _defaultIsAndroid,
+  })  : _isAndroid = isAndroid ?? _defaultIsAndroid,
         _llamaProvider = llamaProvider ?? FCllama.instance,
         _customModelFilePath = modelFilePath;
 
@@ -74,7 +68,6 @@ class AndroidLocalLlmRuntimeService
   static const int _threadCount = 4;
   static const int _maxPredictionTokens = 200;
 
-  final AppSupportDirectoryResolver _appSupportDirectoryResolver;
   final AndroidPlatformChecker _isAndroid;
   final FCllamaProvider _llamaProvider;
   final String? _customModelFilePath;
@@ -103,11 +96,11 @@ class AndroidLocalLlmRuntimeService
       );
     }
 
-    final modelFile = await _ensureBundledModelPresent();
+    final modelFile = await _resolveModelFile();
     if (modelFile == null) {
       return const LocalLlmSummaryAttempt.unavailable(
         reason: LocalLlmUnavailableReason.missingBundledModel,
-        message: 'Bundled GGUF model asset is missing.',
+        message: 'LLM model file is missing.',
       );
     }
 
@@ -146,7 +139,14 @@ class AndroidLocalLlmRuntimeService
         penaltyRepeat: 1.18,
         penaltyFreq: 0.05,
         penaltyPresent: 0.1,
-        stop: const ['<|im_end|>', '<|im_start|>', '<|eot_id|>', '\n\n\n', '---', '逐字稿'],
+        stop: const [
+          '<|im_end|>',
+          '<|im_start|>',
+          '<|eot_id|>',
+          '\n\n\n',
+          '---',
+          '逐字稿',
+        ],
         emitRealtimeCompletion: false,
       );
 
@@ -162,13 +162,14 @@ class AndroidLocalLlmRuntimeService
       debugPrint('Error message: $error');
       debugPrint('Stack trace: $stackTrace');
       debugPrint('============================================');
-      
+
       // Check if it's an ONNX-related error
       final errorStr = error.toString().toLowerCase();
       if (errorStr.contains('clipboard') || errorStr.contains('onnx')) {
-        debugPrint('DETECTED: ONNX/Clipboard related error - checking model file...');
+        debugPrint(
+            'DETECTED: ONNX/Clipboard related error - checking model file...');
       }
-      
+
       return LocalLlmSummaryAttempt.unavailable(
         reason: LocalLlmUnavailableReason.initializationFailed,
         message: 'LLM 執行失敗：$error',
@@ -177,20 +178,25 @@ class AndroidLocalLlmRuntimeService
       if (contextId != null && contextId > 0) {
         try {
           await llama.stopCompletion(contextId: contextId);
-        } catch (_) {}
+        } catch (error) {
+          debugPrint('LLM: Failed to stop completion: $error');
+        }
         try {
           await llama.releaseContext(contextId);
-        } catch (_) {}
+        } catch (error) {
+          debugPrint('LLM: Failed to release context: $error');
+        }
       }
     }
   }
 
   Future<File?> _resolveModelFile() async {
     // 1. If custom model path provided, use it directly
-    if (_customModelFilePath != null) {
-      final customFile = File(_customModelFilePath!);
+    final customModelFilePath = _customModelFilePath;
+    if (customModelFilePath != null) {
+      final customFile = File(customModelFilePath);
       if (await customFile.exists()) {
-        debugPrint('LLM: Using custom model path: $_customModelFilePath');
+        debugPrint('LLM: Using custom model path: $customModelFilePath');
         return customFile;
       }
     }
@@ -216,7 +222,8 @@ class AndroidLocalLlmRuntimeService
     }
 
     // No model available
-    debugPrint('LLM: No downloaded model found. Please download a model first.');
+    debugPrint(
+        'LLM: No downloaded model found. Please download a model first.');
     return null;
   }
 
@@ -259,7 +266,7 @@ class AndroidLocalLlmRuntimeService
   String _buildPrompt(String transcript) {
     // Clean transcript of invalid UTF-8 characters before passing to LLM
     final sanitizedTranscript = _sanitizeUtf8(transcript);
-    
+
     // Truncate very long transcripts to stay within context window limits.
     // Reserve ~300 tokens for prompt framing + output.
     const maxTranscriptChars = 600;
@@ -278,7 +285,7 @@ class AndroidLocalLlmRuntimeService
         '<|im_start|>assistant\n'
         '• ';
   }
-  
+
   /// Remove invalid UTF-8 characters that cause JNI crash in fcllama
   String _sanitizeUtf8(String input) {
     // Replace common problematic characters
@@ -295,33 +302,33 @@ class AndroidLocalLlmRuntimeService
     if (input.length <= maxChars) {
       return input;
     }
-    
+
     // Get the substring up to maxChars
-    String truncated = input.substring(0, maxChars);
-    
+    var truncated = input.substring(0, maxChars);
+
     // Check if the last character is complete (not a truncated multi-byte)
     // Walk backwards to find a valid character boundary
     while (truncated.isNotEmpty) {
       final lastCodeUnit = truncated.codeUnitAt(truncated.length - 1);
-      
+
       // ASCII (0x00-0x7F) - single byte, always valid
       if (lastCodeUnit <= 0x7F) {
         break;
       }
-      
+
       // Check for valid UTF-8 leading byte patterns:
       // - 2-byte: 110xxxxx (0xC0-0xDF)
       // - 3-byte: 1110xxxx (0xE0-0xEF)
       // - 4-byte: 11110xxx (0xF0-0xF7)
       final isLeadingByte = (lastCodeUnit & 0xC0) == 0xC0;
-      
+
       if (!isLeadingByte) {
         // This is a continuation byte (10xxxxxx), not a valid start
         // Remove it and check again
         truncated = truncated.substring(0, truncated.length - 1);
         continue;
       }
-      
+
       // Calculate expected length of this character
       int expectedLength;
       if ((lastCodeUnit & 0xE0) == 0xC0) {
@@ -335,7 +342,7 @@ class AndroidLocalLlmRuntimeService
         truncated = truncated.substring(0, truncated.length - 1);
         continue;
       }
-      
+
       // Check if we have enough characters for this code point
       if (truncated.length >= expectedLength) {
         // Valid - we have the complete character
@@ -345,7 +352,7 @@ class AndroidLocalLlmRuntimeService
         truncated = truncated.substring(0, truncated.length - 1);
       }
     }
-    
+
     return truncated;
   }
 }
