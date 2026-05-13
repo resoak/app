@@ -155,7 +155,7 @@ class AppSettings {
 
   static const WhisperModel defaultWhisperModel = WhisperModel.base;
   static const AppSummaryMethod defaultSummaryMethod =
-      AppSummaryMethod.androidLocalLlm;
+      AppSummaryMethod.extractive;
   static const List<WhisperModel> availableWhisperModels = [
     WhisperModel.base,
     WhisperModel.small,
