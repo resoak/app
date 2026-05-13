@@ -111,7 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('刪除模型'),
-        content: Text('確定要刪除嗎？'),
+        content: const Text('確定要刪除嗎？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -126,7 +126,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (confirm == true) {
       await _modelService.deleteModel(modelId);
-      final newProgress = Map<String, ModelDownloadProgress>.from(_downloadProgress);
+      final newProgress =
+          Map<String, ModelDownloadProgress>.from(_downloadProgress);
       newProgress.remove(modelId);
       setState(() => _downloadProgress = newProgress);
       await _loadDownloadedModels();
@@ -224,22 +225,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-Widget _buildModelDownloadSection() {
+  Widget _buildModelDownloadSection() {
     final palette = context.lvPalette;
-    final availableModels = ModelDownloadInfo.availableModels;
+    const availableModels = ModelDownloadInfo.availableModels;
 
     if (_isLoadingModels) {
-      return _SettingsSectionCard(
+      return const _SettingsSectionCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionHeader(
+            _SectionHeader(
               eyebrow: 'LLM MODEL',
               title: '下載摘要模型',
               description: '下載後的模型會儲存在手機內部空間，佔用約 1-2GB。',
             ),
-            const SizedBox(height: 16),
-            const Center(child: CircularProgressIndicator()),
+            SizedBox(height: 16),
+            Center(child: CircularProgressIndicator()),
           ],
         ),
       );
@@ -279,12 +280,15 @@ Widget _buildModelDownloadSection() {
           if (_downloadProgress.values.any((p) => p.isDownloading)) ...[
             const SizedBox(height: 8),
             LinearProgressIndicator(
-              value: _downloadProgress.values.firstWhere(
-                (p) => p.isDownloading,
-                orElse: () => const ModelDownloadProgress(modelId: ''),
-              ).progress,
+              value: _downloadProgress.values
+                  .firstWhere(
+                    (p) => p.isDownloading,
+                    orElse: () => const ModelDownloadProgress(modelId: ''),
+                  )
+                  .progress,
               backgroundColor: palette.borderSubtle,
-              valueColor: const AlwaysStoppedAnimation(LectureVaultColors.purpleBright),
+              valueColor:
+                  const AlwaysStoppedAnimation(LectureVaultColors.purpleBright),
             ),
             const SizedBox(height: 4),
             Text(
@@ -1342,7 +1346,9 @@ class _ModelDownloadTile extends StatelessWidget {
             color: isSelected ? palette.surfaceSelected : palette.surfaceAlt,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isSelected ? LectureVaultColors.purpleBright : palette.borderSubtle,
+              color: isSelected
+                  ? LectureVaultColors.purpleBright
+                  : palette.borderSubtle,
             ),
           ),
           child: Row(
@@ -1360,10 +1366,14 @@ class _ModelDownloadTile extends StatelessWidget {
                 child: Icon(
                   isDownloaded
                       ? Icons.check_circle_rounded
-                      : (isDownloading ? Icons.downloading_rounded : Icons.cloud_download_outlined),
+                      : (isDownloading
+                          ? Icons.downloading_rounded
+                          : Icons.cloud_download_outlined),
                   color: isDownloaded
                       ? Colors.green
-                      : (isDownloading ? LectureVaultColors.purpleBright : palette.textMuted),
+                      : (isDownloading
+                          ? LectureVaultColors.purpleBright
+                          : palette.textMuted),
                   size: 20,
                 ),
               ),
@@ -1382,14 +1392,17 @@ class _ModelDownloadTile extends StatelessWidget {
                         if (isSelected) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: LectureVaultColors.purpleBright.withValues(alpha: 0.12),
+                              color: LectureVaultColors.purpleBright
+                                  .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               '已選',
-                              style: context.lvMono(9, color: LectureVaultColors.purpleBright),
+                              style: context.lvMono(9,
+                                  color: LectureVaultColors.purpleBright),
                             ),
                           ),
                         ],
@@ -1411,7 +1424,8 @@ class _ModelDownloadTile extends StatelessWidget {
                         child: LinearProgressIndicator(
                           value: progress,
                           backgroundColor: palette.borderSubtle,
-                          valueColor: const AlwaysStoppedAnimation(LectureVaultColors.purpleBright),
+                          valueColor: const AlwaysStoppedAnimation(
+                              LectureVaultColors.purpleBright),
                           minHeight: 4,
                         ),
                       ),
@@ -1436,7 +1450,9 @@ class _ModelDownloadTile extends StatelessWidget {
                   onPressed: isDownloading ? null : onDownload,
                   icon: Icon(
                     Icons.download_rounded,
-                    color: isDownloading ? palette.textMuted : LectureVaultColors.blueElectric,
+                    color: isDownloading
+                        ? palette.textMuted
+                        : LectureVaultColors.blueElectric,
                     size: 20,
                   ),
                   tooltip: '下載模型',
