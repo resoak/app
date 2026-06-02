@@ -1,0 +1,17 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - heading "無法連上這個網站" [level=1] [ref=e7]
+    - paragraph [ref=e8]:
+      - strong [ref=e9]: 127.0.0.1
+      - text: 拒絕連線。
+    - generic [ref=e10]:
+      - paragraph [ref=e11]: 建議做法：
+      - list [ref=e12]:
+        - listitem [ref=e13]: 檢查連線狀態
+        - listitem [ref=e14]:
+          - link "檢查 Proxy 和防火牆" [ref=e15] [cursor=pointer]:
+            - /url: "#buttons"
+    - generic [ref=e16]: ERR_CONNECTION_REFUSED
+  - generic [ref=e17]:
+    - button "重新載入" [ref=e19] [cursor=pointer]
+    - button "詳細資料" [ref=e20] [cursor=pointer]

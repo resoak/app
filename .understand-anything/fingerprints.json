@@ -1,0 +1,679 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-31T10:39:16.010Z",
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "hash": "48f0921b3012cbf167ae084df082cd8b19d49852b51f868f9f295d59753b9460"
+    },
+    {
+      "path": ".metadata",
+      "hash": "27c32944a40e81d9332ef802f1ed169c4030c51eae2a9e64e4b456b914d2a3c4"
+    },
+    {
+      "path": "analysis_options.yaml",
+      "hash": "b63207cf529949ec4727b68c23dbb38ce255b6f6f4ae1effcb5c1dcf2852d238"
+    },
+    {
+      "path": "android/.project",
+      "hash": "a5fa0c2154152a83e4fe3dd88ae75c580f12811ab1a665cd526c0e29e51dcbd9"
+    },
+    {
+      "path": "android/.settings/org.eclipse.buildship.core.prefs",
+      "hash": "39c0e78666af78dffe3dbeb56d55d3fd3f331356550f1700133ba0ebd360c29b"
+    },
+    {
+      "path": "android/app/.classpath",
+      "hash": "c57197b7253a8602da2ce9c37e8f5c6c1590e1db20a37eb1ee12952614c2b919"
+    },
+    {
+      "path": "android/app/.project",
+      "hash": "7ff540a3f09a9b3bf9d554fccd9265476a828dc14f218958d5560a33057b8f29"
+    },
+    {
+      "path": "android/app/.settings/org.eclipse.buildship.core.prefs",
+      "hash": "4d9a60818f21a580c54b23eef081d2aa6d1676695988f5b23cefc22b73aa2c9d"
+    },
+    {
+      "path": "android/app/build.gradle.kts",
+      "hash": "fa9e936bc26d19a1e94ae2dfbe6d935d32b07736952ecd81be3bb58034d490ad"
+    },
+    {
+      "path": "android/app/google-services.json",
+      "hash": "bc5c0a57d2e85835f650d990403d15c17ba005bfcb3bb1796937cc15352e76fb"
+    },
+    {
+      "path": "android/app/proguard-rules.pro",
+      "hash": "3e1406c1bd0d208402116290d559a2478867c34daa404e06c82f86af3fa52b7e"
+    },
+    {
+      "path": "android/app/src/debug/AndroidManifest.xml",
+      "hash": "b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "hash": "3ea586ca531561e24d79a9fa093f00771a2e6b0537372423787c6992f77ac90e"
+    },
+    {
+      "path": "android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so",
+      "hash": "c7c0e6b0f9c364a4df4bfc9a3a3576b691899e96f4d9beb60f3b3a7ce4bf572c"
+    },
+    {
+      "path": "android/app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-c-api.so",
+      "hash": "136c16ef29ba19d8681a811027c7d7bdc3a427e2df156e00e3cf624c133149cb"
+    },
+    {
+      "path": "android/app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-cxx-api.so",
+      "hash": "659d75245e369c79bd2ec03614ef4a15bf6043e51d1d0484ec4e581aee538bcf"
+    },
+    {
+      "path": "android/app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so",
+      "hash": "5d120ad84111b2799b6425369b847ca1bea0a9b911659d26eeef2244e66b7267"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/example/lecture_vault/App.kt",
+      "hash": "6c06444f14703093ff30cd898c5679f2ab940c5224c778e99d7e385431e24199"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/example/lecture_vault/MainActivity.kt",
+      "hash": "0c126fc0594a72cbdb1ae3db341114b4eae775f9f9f41d1feab822c28543996a"
+    },
+    {
+      "path": "android/app/src/main/res/drawable-v21/launch_background.xml",
+      "hash": "dca312ec77de83e43ef70a825c299b51451247286c29167d62f19165750b8793"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/launch_background.xml",
+      "hash": "2df60e2cfbee873ce2858088cf003e6b93498f2f568476da437610467ea1a9d7"
+    },
+    {
+      "path": "android/app/src/main/res/values-night/styles.xml",
+      "hash": "ea763597dc1a84c8034251caee98d7753e0fbf57340ffc94677427de4b537516"
+    },
+    {
+      "path": "android/app/src/main/res/values/styles.xml",
+      "hash": "cca15a99b59380a548bf6a890f7ca5380ee509b1f9bbb2f5f9ec3589fa25c2f7"
+    },
+    {
+      "path": "android/app/src/main/res/xml/file_paths.xml",
+      "hash": "a4e4eb7d427f80fd16669f256aeeec9e675fffcc5204125c9fa946d348822f57"
+    },
+    {
+      "path": "android/app/src/main/res/xml/lecture_vault_share_paths.xml",
+      "hash": "968c70bb17b8bdf57f981b35e20fe1433822f0c84482d00629971b890c710583"
+    },
+    {
+      "path": "android/app/src/profile/AndroidManifest.xml",
+      "hash": "b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c"
+    },
+    {
+      "path": "android/build.gradle.kts",
+      "hash": "3d51bd290a561ed87b3cbbbf7d591b20b173efa7d05f91b16fba488f51f22fca"
+    },
+    {
+      "path": "android/gradle.properties",
+      "hash": "a80cc0499294768155ab76fa1dec7589a4e3f697b1c02961f894cfb58b68e42f"
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.properties",
+      "hash": "1220fdd333a881e47441de07b23f9dd1ebd35459730543ae429cf249847d91bf"
+    },
+    {
+      "path": "android/settings.gradle.kts",
+      "hash": "2d3d79198f4bdd9c0a58e982d8eff8267480876deab4633a64aef8ee5254b456"
+    },
+    {
+      "path": "assets/models/llm/README.md",
+      "hash": "8a66682bb45a3030cfed144bd1adf8a4aef398985bee6938e257e2e86567dd5d"
+    },
+    {
+      "path": "assets/models/minilm/model_quantized.onnx",
+      "hash": "66fc00f5f29afcaff34092e1bdd20008ca3918265a82fb9695a551e510cc4ebc"
+    },
+    {
+      "path": "assets/models/minilm/sentence_bert_config.json",
+      "hash": "3a74bd419599ddc1af2b3f2c5d45de476d3383858721a174bff2922bd6a7f876"
+    },
+    {
+      "path": "assets/models/minilm/tokenizer.json",
+      "hash": "2c3387be76557bd40970cec13153b3bbf80407865484b209e655e5e4729076b8"
+    },
+    {
+      "path": "assets/models/whisper/.gitkeep",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ios/Flutter/AppFrameworkInfo.plist",
+      "hash": "e51cfa76fca1ae586244b43bf97423577315d2906394c1e7768ef43b8d23e161"
+    },
+    {
+      "path": "ios/Flutter/Debug.xcconfig",
+      "hash": "c0d1da54718e75f2028962b689258ecc741abf7cdaed50483aa5225264d0a7d7"
+    },
+    {
+      "path": "ios/Flutter/Release.xcconfig",
+      "hash": "c0d1da54718e75f2028962b689258ecc741abf7cdaed50483aa5225264d0a7d7"
+    },
+    {
+      "path": "ios/Runner.xcodeproj/project.pbxproj",
+      "hash": "a66f1c79ed3ab66bf9dfbf1aff5d5c11e32122778b6bd8f3d819b023bbbe5a32"
+    },
+    {
+      "path": "ios/Runner.xcodeproj/project.xcworkspace/contents.xcworkspacedata",
+      "hash": "ac28b35c2b940210bec0fff8e424b07fd0efe9112ab178a10533583f251a386c"
+    },
+    {
+      "path": "ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+      "hash": "d557c2c32fc6258ec28981fa45dc847b76c9968beb90a2e26d13ef9c4ea45c30"
+    },
+    {
+      "path": "ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings",
+      "hash": "dd64c0308ab2971c456871b990b24a008bdc3ece09833e8dbe9675e33a496e74"
+    },
+    {
+      "path": "ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme",
+      "hash": "570c49fd61c67330efb75097018d1b0df0c68d03667631105a5acf5621112b1b"
+    },
+    {
+      "path": "ios/Runner.xcworkspace/contents.xcworkspacedata",
+      "hash": "706a4c812f2a1e220e6785c27580020d58048e2ae4d30d1280f3c43344ce6b38"
+    },
+    {
+      "path": "ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+      "hash": "d557c2c32fc6258ec28981fa45dc847b76c9968beb90a2e26d13ef9c4ea45c30"
+    },
+    {
+      "path": "ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings",
+      "hash": "dd64c0308ab2971c456871b990b24a008bdc3ece09833e8dbe9675e33a496e74"
+    },
+    {
+      "path": "ios/Runner/AppDelegate.swift",
+      "hash": "ff9f541947a0e822714f01b5f345dedd835124db48967d98131e0b56065faa81"
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "hash": "5f8b941b774bde4496d73347c1f79cbdd786bb76fbdab9ed1f3f0cb78a0fb0d3"
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json",
+      "hash": "fbd112a9f3b541a1d811f71ac8e4fe68b6176687d973a5f4d99b7aa4a722e94e"
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md",
+      "hash": "853ac958e2416fe2540f6f61165283a3618b71a7ba5f85f65ac41c2158dfcd21"
+    },
+    {
+      "path": "ios/Runner/Base.lproj/LaunchScreen.storyboard",
+      "hash": "bc3644fbb251ff1e18de25a4932c927850ae1a025be3dd1447940429633fe4b2"
+    },
+    {
+      "path": "ios/Runner/Base.lproj/Main.storyboard",
+      "hash": "dcea4686c02065e56217fd19fcfb73d7509b41872e7486126149d47a18559363"
+    },
+    {
+      "path": "ios/Runner/Info.plist",
+      "hash": "49b14f0d609415fd7faadd6b4c0a4d586ff7d0c06e2f8ccb06b534ef697e3db3"
+    },
+    {
+      "path": "ios/Runner/Runner-Bridging-Header.h",
+      "hash": "efe657d8b27f7f8595a0d416bffb33fe7d93bd2869d81f7353b556c439d7a1a7"
+    },
+    {
+      "path": "ios/Runner/SceneDelegate.swift",
+      "hash": "edce811c671ca0a6ccb14753e14e16deb0d89a0adf4f1b685e362d87d8f4c366"
+    },
+    {
+      "path": "ios/RunnerTests/RunnerTests.swift",
+      "hash": "c0e04141287eb7f9c9f3d31cf5be8cb626a9ea71351206c9121578e8b8f480c3"
+    },
+    {
+      "path": "lib/main.dart",
+      "hash": "d78dec9c36e6552cdca15746576aaf4d2fdd825220922c24c91387d70f51af58"
+    },
+    {
+      "path": "lib/models/app_setting.dart",
+      "hash": "249c4d45e3cb08ca2550a07a83b1cb20855acf384cdc65bfbd5426048a5b3fd2"
+    },
+    {
+      "path": "lib/models/app_settings.dart",
+      "hash": "ccd6804d9467d03660fc46df9c9f39da6ae9bc8f2459338eca8b655687dc515e"
+    },
+    {
+      "path": "lib/models/drive_backup_metadata.dart",
+      "hash": "dbb67bfa938ee3697bfda4dba2d7d9e928db46e947ee7f8a2a200caa80c37800"
+    },
+    {
+      "path": "lib/models/drive_backup_state.dart",
+      "hash": "2823ab4fdee5fb577be7bddc2c112759d112b72b0db9f87490e9fe9a3f4d6e72"
+    },
+    {
+      "path": "lib/models/lecture.dart",
+      "hash": "8ed3ede3b3f12c2a6c8173c2fa61d20d1d9dc00d44667eb6f05b25074bd98081"
+    },
+    {
+      "path": "lib/providers/app_settings_provider.dart",
+      "hash": "603315c64957222f9344c2b83633dd85d089ebdc4ec6211f02f5c160e8c1af02"
+    },
+    {
+      "path": "lib/providers/drive_backup_provider.dart",
+      "hash": "03bb7fdc48be750fbe95ef417089bdeb791eaaec22c5c7c4c4828563ec2fc43f"
+    },
+    {
+      "path": "lib/providers/model_download_provider.dart",
+      "hash": "266040e5876cb5fef84c47154c8e02aaeb4c3508fde75ee0fcb622a9eec9aa86"
+    },
+    {
+      "path": "lib/providers/transcription_provider.dart",
+      "hash": "ede1abbca4eded857b1835fb783b254e741ab0bf4df840a956d93495e9ef4204"
+    },
+    {
+      "path": "lib/screens/home_screen.dart",
+      "hash": "a67014082b242b75e2c88e57124573ffa93851036ffefcc875156a0782485a95"
+    },
+    {
+      "path": "lib/screens/lecture_detail_screen.dart",
+      "hash": "d277f397392e89eb5e08d3e6e3765363caa60dbc60ca74c8a33e0dcb765e4912"
+    },
+    {
+      "path": "lib/screens/recording_screen.dart",
+      "hash": "ffdb4a173064e36371db3e0febc765bad1cd5f0658600b04d8e0fff720352e64"
+    },
+    {
+      "path": "lib/screens/settings_screen.dart",
+      "hash": "dd4bf83ac4e40d4fd2d96f73bbd05d0ea360cdf0cda7d56f1af7847394abf374"
+    },
+    {
+      "path": "lib/services/android_local_llm_runtime_service.dart",
+      "hash": "ed8350bfc74f504a3c870cfc00200c03fc65986c8ad54e04ff9d61e33635c46e"
+    },
+    {
+      "path": "lib/services/audio_converter_service.dart",
+      "hash": "b30e3aabb6f4b01a55dd796c8df75c90f771f92a7a791c5df7ea535a2c1d77ac"
+    },
+    {
+      "path": "lib/services/audio_import_service.dart",
+      "hash": "bb84657c1b733965003740f1046f087ff701d1bfd0757c444d4866ee56c79d77"
+    },
+    {
+      "path": "lib/services/audio_transcoding_service.dart",
+      "hash": "b220ee54e1987f322414356c4627a988362c5953ee81078823dd53b7d6f74bda"
+    },
+    {
+      "path": "lib/services/background_transcription_service.dart",
+      "hash": "92dcdfffac26812acaa55315ea8f40dd768328b226fea39664249d998de1d88f"
+    },
+    {
+      "path": "lib/services/db_service.dart",
+      "hash": "e21c0562d0053aa89dc177fd5e99e254dbae15135b3fddfd71e3fc35e5d348de"
+    },
+    {
+      "path": "lib/services/drive_backup_archive_service.dart",
+      "hash": "ad5f0566b6b1bc3932326243fb1534be2963cc8e098d62751cf2a0c26bb09155"
+    },
+    {
+      "path": "lib/services/drive_backup_local_store.dart",
+      "hash": "510f175fcfcc301c1f1605a9cd00ab266b2ddd899e73efae3dbd18c0476b2a1e"
+    },
+    {
+      "path": "lib/services/drive_backup_service.dart",
+      "hash": "8b1844d96327b67edb30d563d1b3cd131674c9fc2bb10f3ce27ad09b290e34fd"
+    },
+    {
+      "path": "lib/services/google_auth_service.dart",
+      "hash": "eb97acd53dc784f9c52fb27beb3a8fb49558d20820b9475886469380a8d33338"
+    },
+    {
+      "path": "lib/services/google_drive_auth_service.dart",
+      "hash": "1775ba3f872193974f1e0bda784758430d8adb68dc083377db9804db8ef9b5af"
+    },
+    {
+      "path": "lib/services/google_drive_backup_service.dart",
+      "hash": "6d6243bdd01977f85c4f6e4c03de02bd24f7c72962bb18eddb93a10ea685cd86"
+    },
+    {
+      "path": "lib/services/google_sign_in_configuration.dart",
+      "hash": "c2d0b77844ad31a11e01556cc889733e6479c0c678654ad5b5745af72fc3f636"
+    },
+    {
+      "path": "lib/services/lecture_share_service.dart",
+      "hash": "236e7178a78866ef2756364a4035981d483c0c6f032197b5499cbe9d5aacdd17"
+    },
+    {
+      "path": "lib/services/minilm_runtime_service.dart",
+      "hash": "e1fc66a9b759977302479e6c60f50d506c8750d5a5bda1acd35d42ee7edea316"
+    },
+    {
+      "path": "lib/services/model_download_service.dart",
+      "hash": "ee0559f5ac4988a6acde2a88c608b13bd8ed337c11e00ee54a578f1981fc2a1b"
+    },
+    {
+      "path": "lib/services/recording_service.dart",
+      "hash": "ebd7d3821441b34618321e7b759da703fb68fe797c4a1e1fafea434a780c7ef6"
+    },
+    {
+      "path": "lib/services/settings_service.dart",
+      "hash": "ac7e154a7a604dfaa6ab1a4910d58153f402868955fedc7e6460fec6d84d5c03"
+    },
+    {
+      "path": "lib/services/stt_service.dart",
+      "hash": "5aabd0b719fe582d058b7a24666038651d8844bdb48dbabb8596ecf8d51eaed4"
+    },
+    {
+      "path": "lib/services/summary_service.dart",
+      "hash": "ccfe9823c2fc61b57de4401e3cf30aa00a22609fec3747724215a5d478e9e71e"
+    },
+    {
+      "path": "lib/theme/lecture_vault_theme.dart",
+      "hash": "9b78696e6dacf9647fc537f350f6f695b5e9e060d70dbf6b7e30772b0677a277"
+    },
+    {
+      "path": "lib/utils/embedding_extractive_ranker.dart",
+      "hash": "b27bb2fa75099832311519a50ef52e91e73eb4160d3f48452ec2053efd3ac83d"
+    },
+    {
+      "path": "lib/utils/format_utils.dart",
+      "hash": "8e6179b9b00b97d5997bfd3dc8c28393455f08734de48ef165861ddda40fa36a"
+    },
+    {
+      "path": "lib/utils/paragraph_summary.dart",
+      "hash": "e08aee7f31f5c05d6279053eed1b5ad428c4cba638d6c806bdbb19f8affd0ad2"
+    },
+    {
+      "path": "lib/utils/text_rank.dart",
+      "hash": "6fc678f376d8b4558e3a64986327ca9f85d66e002a5cea75b709ea89175b0bd9"
+    },
+    {
+      "path": "lib/utils/transcript_post_process.dart",
+      "hash": "6d7aabad4b19ad1ad1e98a9fe1e1c98308eff871b824cb30f0ced8a564444822"
+    },
+    {
+      "path": "lib/widgets/lecture_vault_background.dart",
+      "hash": "7bda1d760c58a2f6f4d3ad0a3b998accc829b0e594bd0302acf3f9e292a5e69a"
+    },
+    {
+      "path": "lib/widgets/recording_waveform.dart",
+      "hash": "a3417ec9299a4b3a13a7fec3526dc8393f59db12bb7561537e3f90a740efc74e"
+    },
+    {
+      "path": "linux/CMakeLists.txt",
+      "hash": "291bff5218dc59f46c840994959709a3893290bb0f5022d85d6a3b66203513ba"
+    },
+    {
+      "path": "linux/flutter/CMakeLists.txt",
+      "hash": "4eb17836308c1cd53f6b2bb8edb3b7b30610bff3b1d9df7fecc9317f9109700c"
+    },
+    {
+      "path": "linux/flutter/generated_plugin_registrant.cc",
+      "hash": "991e01e57b3fb905665e07700dd6d68a40a85ac7f2f7c81ce70f6af21d30698f"
+    },
+    {
+      "path": "linux/flutter/generated_plugin_registrant.h",
+      "hash": "00f93bb5b1faefdede8f6065df327522900fb0b8efee86bacf424fd947ed14bb"
+    },
+    {
+      "path": "linux/flutter/generated_plugins.cmake",
+      "hash": "7794f2f29338206e17325b3f736274b9d4c397e30a0c857a2908c8e3fb5ced80"
+    },
+    {
+      "path": "linux/runner/CMakeLists.txt",
+      "hash": "81ecf2604c50f480c23d460b2ddf653ecd39df29cc5b2fe4913f1a59f008a5a7"
+    },
+    {
+      "path": "linux/runner/main.cc",
+      "hash": "905b4dfa4eab584c1eb6244899b7d5ef56d0bceaf3bffb5ea335ed7e0ba3c549"
+    },
+    {
+      "path": "linux/runner/my_application.cc",
+      "hash": "905e64a0bcbd1c76a1307cb5de0eb1c0ce8f835e9ac8138f61c210240f79b1d8"
+    },
+    {
+      "path": "linux/runner/my_application.h",
+      "hash": "880393cb82d7feaaa95d9acd6c2317749afae0e17ea5f5ee44b456bc081b5987"
+    },
+    {
+      "path": "macos/Flutter/Flutter-Debug.xcconfig",
+      "hash": "7e9b3ee3961b7d7718b418ceaed812a5f06a4e4cec894aae712a78e159c32ab0"
+    },
+    {
+      "path": "macos/Flutter/Flutter-Release.xcconfig",
+      "hash": "7e9b3ee3961b7d7718b418ceaed812a5f06a4e4cec894aae712a78e159c32ab0"
+    },
+    {
+      "path": "macos/Flutter/GeneratedPluginRegistrant.swift",
+      "hash": "e176086c35d1aeec801ece7cd6626e26ebb1401b60e415c99701604aca08f2d0"
+    },
+    {
+      "path": "macos/Runner.xcodeproj/project.pbxproj",
+      "hash": "0b5f276dc98a99ed887a7e8c0005fec3e48736d1e9083a75445dbc4f5631b02c"
+    },
+    {
+      "path": "macos/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+      "hash": "d557c2c32fc6258ec28981fa45dc847b76c9968beb90a2e26d13ef9c4ea45c30"
+    },
+    {
+      "path": "macos/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme",
+      "hash": "81a64e598ccf31be95b8aad708c982920beac48bd2fdc6af2219d0b667134aef"
+    },
+    {
+      "path": "macos/Runner.xcworkspace/contents.xcworkspacedata",
+      "hash": "706a4c812f2a1e220e6785c27580020d58048e2ae4d30d1280f3c43344ce6b38"
+    },
+    {
+      "path": "macos/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+      "hash": "d557c2c32fc6258ec28981fa45dc847b76c9968beb90a2e26d13ef9c4ea45c30"
+    },
+    {
+      "path": "macos/Runner/AppDelegate.swift",
+      "hash": "5b9cbdcb563ad8578a99b7c283958490e4af537322e9092fe1efbb3c29ab3e1b"
+    },
+    {
+      "path": "macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "hash": "992ba63d183dfb8f8e3af38ac203d834d23c004da1417c438b4c5a3d7d1d7103"
+    },
+    {
+      "path": "macos/Runner/Base.lproj/MainMenu.xib",
+      "hash": "776c35481f6581f14148b90071558b25f6ce6262e771988985e9fe8d3e70a472"
+    },
+    {
+      "path": "macos/Runner/Configs/AppInfo.xcconfig",
+      "hash": "b01a5ac692b663b2bf5dd7288c699fd8d61cda9fd4a38f61f5907fae7a80a409"
+    },
+    {
+      "path": "macos/Runner/Configs/Debug.xcconfig",
+      "hash": "86be603022e2a385dd7884fce4cc29255676c3dda579d3d4a56c958bf1e57de0"
+    },
+    {
+      "path": "macos/Runner/Configs/Release.xcconfig",
+      "hash": "d1bf3f0349aadd5c58ee9d46c0ce4ce45467127c438936e9bb481d861d296565"
+    },
+    {
+      "path": "macos/Runner/Configs/Warnings.xcconfig",
+      "hash": "aa8ded4c14068cb05f51f5446509fe56805cf1e29961ad6d5a97233bb0632bc1"
+    },
+    {
+      "path": "macos/Runner/DebugProfile.entitlements",
+      "hash": "b2aa41d03e18907d360b721b7bb3edb302897c8a3de98ec47b6665033fea0b0e"
+    },
+    {
+      "path": "macos/Runner/Info.plist",
+      "hash": "047f9cb0f1122c04589483beaedbbe23492fdc8946b94e09bb13080736af4f93"
+    },
+    {
+      "path": "macos/Runner/MainFlutterWindow.swift",
+      "hash": "cc36d67223d5105611921c3284e1a629268498310f4a5eb202030aa100165c5b"
+    },
+    {
+      "path": "macos/Runner/Release.entitlements",
+      "hash": "c3b881c72aa4cca9cf50da6654c4d675dec929056692af46a6fbecd00aef5990"
+    },
+    {
+      "path": "macos/RunnerTests/RunnerTests.swift",
+      "hash": "8a0ff977c64ceac0750fffa48087988b7b4125d1b1c49019221e7fffb574423e"
+    },
+    {
+      "path": "pubspec.yaml",
+      "hash": "6414ec2c92c28cf4583ad27cb4f5bc784613cfc566a9c9178a0ed952a3844fbe"
+    },
+    {
+      "path": "README.md",
+      "hash": "333bb9c7c8d724473ffedc400e89174c474b35d58924610fad84f758c4fe989e"
+    },
+    {
+      "path": "test/app_settings_provider_test.dart",
+      "hash": "c1c1f34d168e7434333358a2627e571306fff6a8ffa053b79b598c5f77488bae"
+    },
+    {
+      "path": "test/audio_import_service_test.dart",
+      "hash": "ac992ecf8309ed60133dcae63603bafddc1615b83d6af61ba0186e88e134332e"
+    },
+    {
+      "path": "test/audio_transcoding_service_test.dart",
+      "hash": "300b812c8fa576b235d532f49ad15d32734df991789b2b34e0c42fa4c9026d4c"
+    },
+    {
+      "path": "test/background_transcription_service_test.dart",
+      "hash": "f7098d50937523daf48989d6288762b4b850880875d7421f95e9757e285e0992"
+    },
+    {
+      "path": "test/db_service_test.dart",
+      "hash": "7700d073d79a87656a338c980cd7ab7c7cf8600d9f5a2d1235e2fa69335b7f96"
+    },
+    {
+      "path": "test/drive_backup_archive_service_test.dart",
+      "hash": "8ef645e30c7b2a2da4106362aee7020be73c23ac3e6fff169e36fd47d98b74f1"
+    },
+    {
+      "path": "test/drive_backup_provider_test.dart",
+      "hash": "0a56c10f3396e8ad86bc950498048b2e71d1064501b0b9aad2a76cb4ee20a099"
+    },
+    {
+      "path": "test/drive_backup_service_test.dart",
+      "hash": "52f2aedafcc6b1d7084271a5133edf5b2e15e6324743b859cb9a02f7dafd770f"
+    },
+    {
+      "path": "test/embedding_extractive_ranker_test.dart",
+      "hash": "ffb36dfbcd7654d4970de03e00df5bec159d374d05229871283797f53dcee638"
+    },
+    {
+      "path": "test/google_sign_in_configuration_test.dart",
+      "hash": "0c017349fdc412c68f72db4f6416652dc42c9756115e806a5b6ad4fe734b74c2"
+    },
+    {
+      "path": "test/lecture_share_service_test.dart",
+      "hash": "b0e7f0f7022e71aa9d894eeb2ed448f655c9122f3e87aa7c9cd8c8a5809064fa"
+    },
+    {
+      "path": "test/minilm_runtime_service_test.dart",
+      "hash": "f6b28ac626a3cb24427868fbad136eeb80881e712e9f47e1cca6b45d433c30f5"
+    },
+    {
+      "path": "test/minilm_summary_service_test.dart",
+      "hash": "f2b68c626301f53531c65d5053ec037c061621613d478a36ffd2b970258e8279"
+    },
+    {
+      "path": "test/paragraph_summary_test.dart",
+      "hash": "ff4474e618924fe461756e31583dcc2cd03131425b0406dc89469d696a64a92b"
+    },
+    {
+      "path": "test/recording_service_test.dart",
+      "hash": "c7f6da0138f70aad86271b7efbb1ddc2cb66db5df4478dee0a468a9d2d4f245c"
+    },
+    {
+      "path": "test/stt_service_test.dart",
+      "hash": "b9152b6a4a6912741330cfe321ebc8e539d557c952c15737cb9293b4a180a7e0"
+    },
+    {
+      "path": "test/summary_service_test.dart",
+      "hash": "dd303bedaf8b23b1195d8a7f05a21265dec7894c5c82e743dd0a081b7b94ac0c"
+    },
+    {
+      "path": "test/text_rank_test.dart",
+      "hash": "4ef0e5c5be79fd50c2ce21fb6957a1e4652e996bc4fdc877f62dc265dae63c68"
+    },
+    {
+      "path": "test/transcript_post_process_test.dart",
+      "hash": "685814133b276c52261e72969518f781f4987f5dedc2b75de27caab1cf330334"
+    },
+    {
+      "path": "test/transcription_provider_test.dart",
+      "hash": "075caf070a62404c525c98203ee3f7819e758f50fc29b7fdcb6eca982f33eab8"
+    },
+    {
+      "path": "test/widget_test.dart",
+      "hash": "26c926b4990e7e20f56066c85f3c6ec43b409fd3b1952ec6a23ec359a63ab609"
+    },
+    {
+      "path": "web/index.html",
+      "hash": "487bc4920d1eb4724d0b939ab9ef85c68bb1f5c8a1e4a1ec945b80d15c29854c"
+    },
+    {
+      "path": "web/manifest.json",
+      "hash": "e4e2e8776f5ba5b0c3681aa9665055562fb5d91fcaa374f78424cc66bd489e86"
+    },
+    {
+      "path": "windows/CMakeLists.txt",
+      "hash": "0e9b35f9c19312f6e9e9990e2a4e8f80ec0839bc183758131c3e6deb76240f20"
+    },
+    {
+      "path": "windows/flutter/CMakeLists.txt",
+      "hash": "bd05e3268b2f246bcbafdb778165fe67a7bafdba04eb73599502563a67b8ae7e"
+    },
+    {
+      "path": "windows/flutter/generated_plugin_registrant.cc",
+      "hash": "4f6e2101815157a02cd07b234aa211edeb1761c371007ea082c1bb837d03df03"
+    },
+    {
+      "path": "windows/flutter/generated_plugin_registrant.h",
+      "hash": "dbc11635d7b1ba1887adf40df5b83d634e9c3ab0bee34510c71528bb4d73602a"
+    },
+    {
+      "path": "windows/flutter/generated_plugins.cmake",
+      "hash": "8d2f882d924353d4ae1fd0430bfdaf4031c2d740fcc9f8e13dae6770e214f111"
+    },
+    {
+      "path": "windows/runner/CMakeLists.txt",
+      "hash": "d765fdd05f63ad099e585a2cced0cbff13ec3229b7de68c8681b2107db850089"
+    },
+    {
+      "path": "windows/runner/flutter_window.cpp",
+      "hash": "d615eedc06ae37321e59c2c00c7687d1887dcd97904eb7225fafd8dcb5b83da6"
+    },
+    {
+      "path": "windows/runner/flutter_window.h",
+      "hash": "0252b804f5da380c7709cbe1daff2b8d18daf6c49d7e6dd43e5af3c99c19f56c"
+    },
+    {
+      "path": "windows/runner/main.cpp",
+      "hash": "8b53164635c7503a852fda4e3b51179c7dd65e211490fb972173424f265ccc0b"
+    },
+    {
+      "path": "windows/runner/resource.h",
+      "hash": "d0e8bf7835468b4b6b1f8f0747f2e8f25c19841f2df2ac60aaa584ddae3aa7c6"
+    },
+    {
+      "path": "windows/runner/runner.exe.manifest",
+      "hash": "639a56233fcd8cbcb8bbefcd93e4680ec2664f32d9acfb3d2ec1d8726a96e090"
+    },
+    {
+      "path": "windows/runner/Runner.rc",
+      "hash": "589f36cffc2d39e757a4a55ba610fafcc32e617ec4318601723ff554502c854b"
+    },
+    {
+      "path": "windows/runner/utils.cpp",
+      "hash": "fbb18524c22593d0ce7869b0733e237be38e668fe045e3023bcf2d0b31784fa3"
+    },
+    {
+      "path": "windows/runner/utils.h",
+      "hash": "832e246b6758253f89016fb0374b30791242e97ad950d27fc678b3d9feacfdc4"
+    },
+    {
+      "path": "windows/runner/win32_window.cpp",
+      "hash": "4e4f4dcf8e86ea6e097562cb3476039e693449bd8045367538afee579c017511"
+    },
+    {
+      "path": "windows/runner/win32_window.h",
+      "hash": "d154cf89ba85f820631a9b5bedacbe64fc5815e428fe6bc5da579ce649f69841"
+    }
+  ]
+}
