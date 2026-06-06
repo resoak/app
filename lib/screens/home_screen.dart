@@ -18,6 +18,16 @@ import 'lecture_detail_screen.dart';
 import 'recording_screen.dart';
 import 'settings_screen.dart';
 
+String transcriptionProgressBadgeLabel(TranscriptionState? transcriptionState) {
+  if (transcriptionState == null) {
+    return '轉錄中…';
+  }
+
+  final progressPercent =
+      (transcriptionState.progress.clamp(0.0, 1.0) * 100).round();
+  return '轉錄中 $progressPercent%';
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -925,7 +935,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '轉錄中 ${((transcriptionState?.progress ?? 0) * 100).round()}%',
+                          transcriptionProgressBadgeLabel(transcriptionState),
                           style: context.lvMono(10,
                               color: LectureVaultColors.blueElectric),
                         ),

@@ -114,6 +114,11 @@ class TranscriptionNotifier extends Notifier<Map<int, TranscriptionState>> {
     if (lecture.id == null) return;
     final lectureId = lecture.id!;
 
+    final existingState = state[lectureId];
+    if (existingState?.status == TranscriptionStatus.transcribing) {
+      return;
+    }
+
     _cleanupTimers.remove(lectureId)?.cancel();
 
     // Initialize state

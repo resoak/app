@@ -5,11 +5,42 @@ allprojects {
     }
 }
 
+fun patchFcllamaNativeBuild(project: Project) {
+    if (project.name != "fcllama") return
+
+    val buildGradle = project.layout.projectDirectory.file("build.gradle").asFile
+    if (buildGradle.exists()) {
+        val original = buildGradle.readText()
+        val patched = original
+            .replace(
+                "-O3 -flto -ffunction-sections -fdata-sections -fvisibility=hidden -funroll-loops -fomit-frame-pointer",
+                "-O2 -ffunction-sections -fdata-sections -fvisibility=hidden -funroll-loops -fomit-frame-pointer",
+            )
+        if (patched != original) {
+            buildGradle.writeText(patched)
+            println("Build stability: removed fcllama Gradle LTO flags.")
+        }
+    }
+
+    val cmakeFile = project.layout.projectDirectory.file("src/main/CMakeLists.txt").asFile
+    if (cmakeFile.exists()) {
+        val original = cmakeFile.readText()
+        val patched = original
+            .replace("target_compile_options(\${target_name} PRIVATE -O3 -DNDEBUG)", "target_compile_options(\${target_name} PRIVATE -O2 -DNDEBUG)")
+            .replace("    target_link_options(\${target_name} PRIVATE -flto)\n", "")
+        if (patched != original) {
+            cmakeFile.writeText(patched)
+            println("Build stability: removed fcllama CMake LTO linker flags.")
+        }
+    }
+}
+
 val rootBuildDir = rootProject.layout.projectDirectory.dir("../build")
 rootProject.layout.buildDirectory.value(rootBuildDir)
 
 subprojects {
     val subproject = this
+    patchFcllamaNativeBuild(subproject)
     subproject.layout.buildDirectory.value(rootBuildDir.dir(subproject.name))
 
     subproject.afterEvaluate {

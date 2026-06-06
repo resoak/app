@@ -107,6 +107,53 @@ void main() {
       expect(container.read(transcriptionProvider).containsKey(1), isFalse);
     });
 
+    test('duplicate start does not reset active progress to zero', () async {
+      final completions = <Completer<void>>[];
+      Future<void> fakeTranscriber(
+        Lecture lecture, {
+        dynamic whisperModel,
+      }) {
+        final completer = Completer<void>();
+        completions.add(completer);
+        return completer.future;
+      }
+
+      final container = ProviderContainer(
+        overrides: [
+          backgroundLectureTranscriberProvider
+              .overrideWithValue(fakeTranscriber),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(transcriptionProvider.notifier);
+      final lecture = Lecture(
+        id: 3,
+        title: 'Duplicate Start Test',
+        date: DateTime.utc(2026, 6, 6).toIso8601String(),
+        audioPath: '/tmp/duplicate.wav',
+        durationSeconds: 10,
+      );
+
+      final firstRun = notifier.transcribeLecture(lecture);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      final progressBeforeDuplicate =
+          container.read(transcriptionProvider)[3]?.progress;
+      expect(progressBeforeDuplicate, isNotNull);
+      expect(progressBeforeDuplicate, greaterThan(0));
+
+      await notifier.transcribeLecture(lecture);
+
+      final activeState = container.read(transcriptionProvider)[3];
+      expect(activeState?.status, TranscriptionStatus.transcribing);
+      expect(activeState?.progress, progressBeforeDuplicate);
+      expect(completions, hasLength(1));
+
+      completions.first.complete();
+      await firstRun;
+    });
+
     test('failed transcription keeps error state and does not mark completed',
         () async {
       Future<void> failingTranscriber(

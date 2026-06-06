@@ -1,4 +1,4 @@
-# Lecture Vault
+摩ㄒㄧㄥ# Lecture Vault
 
 Lecture Vault is a Flutter app for recording lectures, transcribing speech, and generating study notes. It supports local extractive summaries by default, optional Android local LLM summaries, Google sign-in/Drive integration, and bundled or locally downloaded speech/LLM model assets.
 
@@ -58,11 +58,25 @@ flutter run
 
 ## Model assets
 
-Large model files are intentionally not committed to git.
+Large model files are intentionally handled with Git LFS or local downloads.
 
-- Whisper `.bin` files belong in `assets/models/whisper/` when you want them bundled into a local build.
+- Whisper `ggml-base.bin` and `ggml-small.bin` belong in
+  `assets/models/whisper/` and are tracked through Git LFS when committed.
 - Android local LLM `.gguf` files are excluded from git; the app can download supported LLM models from Settings.
 - If no local LLM model is available, Lecture Vault falls back to the built-in extractive summary method.
+
+After cloning, make sure Git LFS is installed and pull LFS assets:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+If the Whisper models have not been committed through Git LFS yet, download them locally:
+
+```powershell
+.\scripts\download_whisper_models.ps1
+```
 
 The repository includes placeholder model directories so fresh clones can run `flutter pub get` and build without manually creating folders.
 

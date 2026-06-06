@@ -56,6 +56,9 @@ app.*.map.json
 # Local temp artifacts and downloaded archives
 /.tmp/
 
-# Large model binary files (too large for GitHub, download separately)
+# Large model binary files. Whisper base/small are intentionally tracked through
+# Git LFS so fresh clones can receive the speech models with `git lfs pull`.
 assets/models/llm/*.gguf
 assets/models/whisper/*.bin
+!assets/models/whisper/ggml-base.bin
+!assets/models/whisper/ggml-small.bin
