@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../models/app_settings.dart';
+
+/// Local font family names registered in `pubspec.yaml`.
+abstract final class LectureVaultFonts {
+  static const String body = 'Inter';
+  static const String mono = 'JetBrainsMono';
+}
 
 /// Brand accents shared by both black/white themes.
 abstract final class LectureVaultColors {
@@ -182,10 +187,62 @@ ThemeData buildLectureVaultTheme(AppBackgroundStyle backgroundStyle) {
 
   return base.copyWith(
     extensions: <ThemeExtension<dynamic>>[palette],
-    textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
-      bodyColor: palette.textPrimary,
-      displayColor: palette.textPrimary,
-    ),
+    textTheme: base.textTheme
+        .apply(
+          bodyColor: palette.textPrimary,
+          displayColor: palette.textPrimary,
+        )
+        .copyWith(
+          // Use the locally bundled Inter font for every TextTheme role so
+          // that default Material widgets (AppBar, Button, ListTile, etc.)
+          // pick up the bundled font without needing to set fontFamily
+          // explicitly at every callsite.
+          bodyLarge: base.textTheme.bodyLarge?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          bodyMedium: base.textTheme.bodyMedium?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          bodySmall: base.textTheme.bodySmall?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          labelLarge: base.textTheme.labelLarge?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          labelMedium: base.textTheme.labelMedium?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          labelSmall: base.textTheme.labelSmall?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          titleLarge: base.textTheme.titleLarge?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          titleMedium: base.textTheme.titleMedium?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          titleSmall: base.textTheme.titleSmall?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          headlineLarge: base.textTheme.headlineLarge?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          headlineMedium: base.textTheme.headlineMedium?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          headlineSmall: base.textTheme.headlineSmall?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          displayLarge: base.textTheme.displayLarge?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          displayMedium: base.textTheme.displayMedium?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+          displaySmall: base.textTheme.displaySmall?.copyWith(
+            fontFamily: LectureVaultFonts.body,
+          ),
+        ),
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       foregroundColor: palette.textPrimary,
@@ -209,7 +266,8 @@ ThemeData buildLectureVaultTheme(AppBackgroundStyle backgroundStyle) {
     popupMenuTheme: PopupMenuThemeData(
       color: palette.surface,
       surfaceTintColor: Colors.transparent,
-      textStyle: GoogleFonts.jetBrainsMono(
+      textStyle: TextStyle(
+        fontFamily: LectureVaultFonts.mono,
         color: palette.textPrimary,
         fontSize: 13,
         fontWeight: FontWeight.w500,
@@ -251,7 +309,8 @@ extension LectureVaultContextThemeX on BuildContext {
   LectureVaultPalette get lvPalette => Theme.of(this).lectureVaultPalette;
 
   TextStyle lvMono(double size, {Color? color, FontWeight? weight}) {
-    return GoogleFonts.jetBrainsMono(
+    return TextStyle(
+      fontFamily: LectureVaultFonts.mono,
       fontSize: size,
       color: color ?? lvPalette.textMono,
       fontWeight: weight ?? FontWeight.w500,
@@ -264,7 +323,8 @@ extension LectureVaultContextThemeX on BuildContext {
     FontWeight weight = FontWeight.w700,
     Color? color,
   }) {
-    return GoogleFonts.inter(
+    return TextStyle(
+      fontFamily: LectureVaultFonts.body,
       fontSize: size,
       fontWeight: weight,
       color: color ?? lvPalette.textPrimary,

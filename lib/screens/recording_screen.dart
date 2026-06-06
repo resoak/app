@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import '../models/lecture.dart';
@@ -201,7 +200,8 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen>
                 const SizedBox(height: 36),
                 Text(
                   _formatHms(_seconds),
-                  style: GoogleFonts.jetBrainsMono(
+                  style: TextStyle(
+                    fontFamily: LectureVaultFonts.mono,
                     fontSize: 44,
                     fontWeight: FontWeight.w300,
                     color: palette.textPrimary,
